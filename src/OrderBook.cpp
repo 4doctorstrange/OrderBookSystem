@@ -33,6 +33,8 @@ std::vector<Trade> OrderBook::match(Order& order) {
                 int fill = std::min(quantityCouldBeFulfilled, order.remQuantity);
                 quantityCouldBeFulfilled -= fill;
                 order.remQuantity -= fill;
+                priceLevelList.totalQuantity -= fill;       // subtract the "fill" from total quantity of a level also
+
                 Trade tr(order.Oid, priceOrderItr ->Oid, it->first, fill );
                 trades.push_back(tr);
                 
@@ -66,7 +68,7 @@ std::vector<Trade> OrderBook::match(Order& order) {
                 int fill = std::min(quantityCouldBeFulfilled, order.remQuantity);
                 quantityCouldBeFulfilled -= fill;
                 order.remQuantity -= fill;
-
+                priceLevelList.totalQuantity -= fill;       // subtract the "fill" from total quantity of a level also
                 Trade tr(priceOrderItr -> Oid, order.Oid, it->first, fill );
                 trades.push_back(tr);
                 // Check if order in BIDS is fullfilled or not

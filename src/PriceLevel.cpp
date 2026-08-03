@@ -2,7 +2,7 @@
 #include "../include/PriceLevel.hpp"
 
 
-PriceLevel::PriceLevel(double _price) : price(_price) {}
+PriceLevel::PriceLevel(double _price) : price(_price), totalQuantity(0) {}
 
 std::list<Order>::iterator PriceLevel::addOrder(Order& order) {
     // orders.push_back(order);
@@ -13,6 +13,7 @@ std::list<Order>::iterator PriceLevel::addOrder(Order& order) {
 }
 
 void PriceLevel::removeOrder(std::list<Order>::iterator& orderItr) {
+    totalQuantity -= orderItr->remQuantity;    // Suppose in book, if we want to cancel an unfulfilled order, we need to remove's count from that level's totalQuantity 
     orders.erase(orderItr);
     
 }
