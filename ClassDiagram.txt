@@ -1,0 +1,109 @@
+==========================================================================
+                     ORDER BOOK SYSTEM - CLASS DIAGRAM
+==========================================================================
+
+
+  +----------------------------+        +----------------------------+
+  |      <<enum>> Side         |        |    <<enum>> OrderType      |
+  +----------------------------+        +----------------------------+
+  |  Buy                       |        |  Limit                     |
+  |  Sell                      |        |  Market                    |
+  +----------------------------+        +----------------------------+
+
+
+  +--------------------------------------+
+  |                Order                 |
+  +--------------------------------------+
+  |  id            : OrderId             |
+  |  side          : Side                |
+  |  type          : OrderType           |
+  |  price         : Price               |
+  |  quantity      : Quantity            |
+  |  remainingQty  : Quantity            |
+  |  timestamp     : Timestamp           |
+  +--------------------------------------+
+  |  isFilled() : bool                   |   // remainingQty == 0
+  +--------------------------------------+
+
+
+  +--------------------------------------+
+  |                Trade                 |
+  +--------------------------------------+
+  |  buyOrderId   : OrderId              |
+  |  sellOrderId  : OrderId              |
+  |  price        : Price                |   // execution price (from resting order)
+  |  quantity     : Quantity             |
+  |  timestamp    : Timestamp            |
+  +--------------------------------------+
+
+
+  +--------------------------------------+
+  |              PriceLevel              |
+  +--------------------------------------+
+  |  price         : Price               |
+  |  orders        : list<Order>         |   // FIFO queue (time priority)
+  |  totalQuantity : Quantity            |
+  +--------------------------------------+
+  |  addOrder(order)                     |   // append to back
+  |  removeOrder(order)                  |   // erase from queue
+  |  front() : Order&                    |   // oldest order
+  |  isEmpty() : bool                    |
+  +--------------------------------------+
+
+
+  +----------------------------------------------------------+
+  |                        OrderBook                         |
+  +----------------------------------------------------------+
+  |  bids  : map<Price, PriceLevel>   (sorted DESC)          |
+  |  asks  : map<Price, PriceLevel>   (sorted ASC)           |
+  |  index : unordered_map<OrderId, location>                |  // O(1) cancel
+  +----------------------------------------------------------+
+  |  addOrder(order) : vector<Trade>                         |  // match, then rest
+  |  match(order)    : vector<Trade>                         |  // core matching loop
+  |  cancelOrder(id)                                         |
+  |  modifyOrder(id, ...)          // later                  |
+  |  bestBid() : Price                                       |
+  |  bestAsk() : Price                                       |
+  |  spread()  : Price                                       |
+  +----------------------------------------------------------+
+
+
+  +----------------------------------------------------------+
+  |                     MatchingEngine                       |   (optional wrapper)
+  +----------------------------------------------------------+
+  |  books : map<Symbol, OrderBook>                          |  // one book per symbol
+  +----------------------------------------------------------+
+  |  submit(symbol, order) : vector<Trade>                   |
+  |  cancel(symbol, id)                                      |
+  +----------------------------------------------------------+
+
+
+==========================================================================
+                            RELATIONSHIPS
+==========================================================================
+
+  MatchingEngine  "1" ----< manages >----  "many" OrderBook   (one per Symbol)
+
+  OrderBook       "1" ----< has >-------  "many" PriceLevel    (bids + asks)
+
+  PriceLevel      "1" ----< holds >-----  "many" Order         (FIFO queue)
+
+  OrderBook       "1" ----< produces >--  "many" Trade         (matching output)
+
+  Order           "1" ----< has a >-----  "1" Side
+  Order           "1" ----< has a >-----  "1" OrderType
+
+
+==========================================================================
+    match() : the heart of the engine
+--------------------------------------------------------------------------
+    while (order has remainingQty) AND
+          (best opposite level crosses order.price):
+        resting = oppositeLevel.front()
+        fillQty = min(order.remainingQty, resting.remainingQty)
+        emit Trade(price = resting.price, qty = fillQty)
+        reduce both remainingQty by fillQty
+        if resting filled -> removeOrder + drop level if empty
+    leftover -> rest in book (Limit) OR drop (Market)
+==========================================================================
+

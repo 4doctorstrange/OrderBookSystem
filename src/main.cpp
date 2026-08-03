@@ -1,0 +1,160 @@
+#include "../include/OrderBook.hpp"
+#include <iostream>
+#include <string>
+
+// ---- small printing helpers -------------------------------------------------
+
+static std::string sideName(Side s) { return s == Side::BUY ? "BUY" : "SELL"; }
+
+static void printTrades(const std::string& label, const std::vector<Trade>& trades) {
+    std::cout << "\n[" << label << "] -> " << trades.size() << " trade(s)\n";
+    for (const auto& t : trades) {
+        std::cout << "    TRADE  buy#" << t.buyOrderId
+                  << "  sell#" << t.sellOrderId
+                  << "  qty " << t.quantity
+                  << "  @ " << t.price << "\n";
+    }
+    if (trades.empty())
+        std::cout << "    (no match - order rested / dropped)\n";
+}
+
+static void printBook(OrderBook& book) {
+    std::cout << "  --- BOOK ---\n";
+    std::cout << "  ASKS (low->high):\n";
+    for (auto& [price, level] : book.Asks) {
+        std::cout << "    " << price << " : ";
+        for (auto& o : level.orders) std::cout << "#" << o.Oid << "(" << o.remQuantity << ") ";
+        std::cout << "\n";
+    }
+    std::cout << "  BIDS (high->low):\n";
+    for (auto& [price, level] : book.Bids) {
+        std::cout << "    " << price << " : ";
+        for (auto& o : level.orders) std::cout << "#" << o.Oid << "(" << o.remQuantity << ") ";
+        std::cout << "\n";
+    }
+    std::cout << "  ------------\n";
+}
+
+// helper: build a limit order (remQuantity starts equal to quantity)
+static Order limit(Side s, double price, int qty) {
+    return Order(s, OrderType::LIMIT, price, qty, qty);
+}
+static Order market(Side s, int qty) {
+    return Order(s, OrderType::MARKET, 0.0, qty, qty);
+}
+
+// ----------------------------------------------------------------------------
+
+int main() {
+    std::cout << "========================================\n";
+    std::cout << " ORDER BOOK ENGINE - DEMO\n";
+    std::cout << "========================================\n";
+
+    // Scenario 1: two limits rest (no cross), then a buy that fully fills one.
+    {
+        std::cout << "\n### Scenario 1: rest then full fill ###\n";
+        OrderBook book;
+
+        auto a = limit(Side::SELL, 101.00, 50);   // rests in asks
+        printTrades("SELL 50 @ 101", book.addOrder(a));
+
+        auto b = limit(Side::BUY, 100.00, 100);    // rests in bids (no cross)
+        printTrades("BUY 100 @ 100", book.addOrder(b));
+        printBook(book);
+
+        auto c = limit(Side::BUY, 101.00, 50);     // crosses, fully fills the ask
+        printTrades("BUY 50 @ 101", book.addOrder(c));
+        printBook(book);
+    }
+
+    // Scenario 2: sweep multiple ask levels (price priority).
+    {
+        std::cout << "\n### Scenario 2: sweep multiple levels ###\n";
+        OrderBook book;
+
+        auto a = limit(Side::SELL, 101.00, 50);
+        auto b = limit(Side::SELL, 102.00, 50);
+        book.addOrder(a);
+        book.addOrder(b);
+        printBook(book);
+
+        auto c = limit(Side::BUY, 102.00, 70);     // takes 50@101 then 20@102
+        printTrades("BUY 70 @ 102", book.addOrder(c));
+        printBook(book);
+    }
+
+    // Scenario 3: FIFO / time priority at the same price.
+    {
+        std::cout << "\n### Scenario 3: time priority (FIFO) ###\n";
+        OrderBook book;
+
+        auto a = limit(Side::SELL, 101.00, 50);    // arrives first
+        auto b = limit(Side::SELL, 101.00, 30);    // arrives later
+        book.addOrder(a);
+        book.addOrder(b);
+        printBook(book);
+
+        auto c = limit(Side::BUY, 101.00, 60);     // fills #a fully (50), then 10 of #b
+        printTrades("BUY 60 @ 101", book.addOrder(c));
+        printBook(book);
+    }
+
+    // Scenario 4: partial fill, remainder rests.
+    {
+        std::cout << "\n### Scenario 4: partial fill, remainder rests ###\n";
+        OrderBook book;
+
+        auto a = limit(Side::SELL, 101.00, 30);
+        book.addOrder(a);
+
+        auto b = limit(Side::BUY, 101.00, 50);     // fills 30, 20 rests as a bid
+        printTrades("BUY 50 @ 101", book.addOrder(b));
+        printBook(book);
+    }
+
+    // Scenario 5: market order - fills best, leftover dropped (not rested).
+    {
+        std::cout << "\n### Scenario 5: market order ###\n";
+        OrderBook book;
+
+        auto a = limit(Side::SELL, 101.00, 50);
+        book.addOrder(a);
+
+        auto b = market(Side::BUY, 80);            // fills 50, leftover 30 dropped
+        printTrades("BUY 80 MARKET", book.addOrder(b));
+        printBook(book);
+    }
+
+    // Scenario 6: cancel a resting order, then confirm matching skips it.
+    {
+        std::cout << "\n### Scenario 6: cancel a resting order ###\n";
+        OrderBook book;
+
+        auto a = limit(Side::SELL, 101.00, 50);
+        auto b = limit(Side::SELL, 101.00, 30);    // same level, behind a (FIFO)
+        auto c = limit(Side::SELL, 102.00, 40);
+        book.addOrder(a);
+        book.addOrder(b);
+        book.addOrder(c);
+        std::cout << "Resting order ids -> a=#" << a.Oid
+                  << " b=#" << b.Oid << " c=#" << c.Oid << "\n";
+        printBook(book);
+
+        std::cout << "\n-> cancel #" << a.Oid << " (front of 101 level)\n";
+        book.optimalCancelOrder(a.Oid);
+        printBook(book);   // expect: 101 -> only b, 102 -> c
+
+        std::cout << "\n-> cancel #" << c.Oid << " (only order at 102, level should vanish)\n";
+        book.optimalCancelOrder(c.Oid);
+        printBook(book);   // expect: 102 level gone entirely
+
+        // Now a BUY should match the remaining b (#b) at 101, not the cancelled a.
+        auto d = limit(Side::BUY, 101.00, 30);
+        printTrades("BUY 30 @ 101 (should hit #" + std::to_string(b.Oid) + ")",
+                    book.addOrder(d));
+        printBook(book);
+    }
+
+    std::cout << "\nDone.\n";
+    return 0;
+}
