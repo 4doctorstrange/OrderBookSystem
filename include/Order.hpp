@@ -11,21 +11,16 @@ class Order {
         int Oid;
         Side side;
         OrderType orderType;
-        double price;
+        int64_t price;
         int quantity;
         int remQuantity;
         long long  timeStamp;
-
     
         Order (Side _side, OrderType _orderType, double _price, int _quantity,
                 int _remQuantity);  // Need to handle timestamp and id gen in cpp
 
         bool isFilled();
 
-        // double getPrice();
-        // int getQuantity();
-        // int getRemQuantity();
-        // long long orderTimeStamp();
 
 };
 

@@ -9,8 +9,8 @@
 
 class OrderBook {
     public: 
-        std::map<double, PriceLevel, std::greater<double> > Bids;  // Largest bids first to maximise profit
-        std::map<double, PriceLevel> Asks;  // Smaller asks first to maximise profit
+        std::map<int64_t, PriceLevel, std::greater<int64_t> > Bids;  // Largest bids first to maximise profit
+        std::map<int64_t, PriceLevel> Asks;  // Smaller asks first to maximise profit
         std::unordered_map<int, std::list<Order>::iterator> OrdersInBook;
         OrderBook();
 

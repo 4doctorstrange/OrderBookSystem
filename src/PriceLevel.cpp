@@ -2,11 +2,9 @@
 #include "../include/PriceLevel.hpp"
 
 
-PriceLevel::PriceLevel(double _price) : price(_price), totalQuantity(0) {}
+PriceLevel::PriceLevel(int64_t _price) : price(_price), totalQuantity(0) {}
 
 std::list<Order>::iterator PriceLevel::addOrder(Order& order) {
-    // orders.push_back(order);
-
     totalQuantity += order.remQuantity;
     auto itr = orders.insert(orders.end(), order);
     return itr;

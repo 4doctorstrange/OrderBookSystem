@@ -12,7 +12,7 @@ static void printTrades(const std::string& label, const std::vector<Trade>& trad
         std::cout << "    TRADE  buy#" << t.buyOrderId
                   << "  sell#" << t.sellOrderId
                   << "  qty " << t.quantity
-                  << "  @ " << t.price << "\n";
+                  << "  @ " << static_cast<double>(t.price) / utils::tickMultiplier << "\n";
     }
     if (trades.empty())
         std::cout << "    (no match - order rested / dropped)\n";
@@ -22,13 +22,13 @@ static void printBook(OrderBook& book) {
     std::cout << "  --- BOOK ---\n";
     std::cout << "  ASKS (low->high):\n";
     for (auto& [price, level] : book.Asks) {
-        std::cout << "    " << price << " : ";
+        std::cout << "    " << static_cast<double>(price) / utils::tickMultiplier << " : ";
         for (auto& o : level.orders) std::cout << "#" << o.Oid << "(" << o.remQuantity << ") ";
         std::cout << "\n";
     }
     std::cout << "  BIDS (high->low):\n";
     for (auto& [price, level] : book.Bids) {
-        std::cout << "    " << price << " : ";
+        std::cout << "    " << static_cast<double>(price)  / utils::tickMultiplier << " : ";
         for (auto& o : level.orders) std::cout << "#" << o.Oid << "(" << o.remQuantity << ") ";
         std::cout << "\n";
     }
@@ -72,8 +72,8 @@ int main() {
         std::cout << "\n### Scenario 2: sweep multiple levels ###\n";
         OrderBook book;
 
-        auto a = limit(Side::SELL, 101.00, 50);
-        auto b = limit(Side::SELL, 102.00, 50);
+        auto a = limit(Side::SELL, 101.70, 50);
+        auto b = limit(Side::SELL, 101.05, 50);
         book.addOrder(a);
         book.addOrder(b);
         printBook(book);

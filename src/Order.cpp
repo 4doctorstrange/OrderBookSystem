@@ -4,7 +4,7 @@
 int Order::id = 0;
 
 Order::Order(Side _side, OrderType _orderType, double _price, int _quantity, int _remQuantity)
-                : side(_side), orderType(_orderType), price(_price), quantity(_quantity), remQuantity(_remQuantity) {
+                : side(_side), orderType(_orderType), price(static_cast<int64_t>(_price * utils::tickMultiplier) ), quantity(_quantity), remQuantity(_remQuantity) {
                     Oid = id++;
                     timeStamp = utils::getTimestamp();
                 }

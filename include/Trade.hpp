@@ -7,12 +7,12 @@ class Trade {
     public:
         int buyOrderId;
         int sellOrderId;
-        double price;
+        int64_t price;
         int quantity;
         long long  timeStamp;
 
 
-        Trade (int _buyId, int _sellId, double _price, int _quantity); // Need to handle timestamp
+        Trade (int _buyId, int _sellId, int64_t _price, int _quantity); // Need to handle timestamp
 
 };
 

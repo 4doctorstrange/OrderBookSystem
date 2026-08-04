@@ -6,11 +6,11 @@
 
 class PriceLevel {
     public:
-        double price;
+        int64_t price;
         std::list<Order> orders;
         int totalQuantity;
 
-        PriceLevel(double _price); 
+        PriceLevel(int64_t _price); 
         std::list<Order>::iterator addOrder(Order& order);
         void removeOrder(std::list<Order>::iterator&  order);
         Order& front();

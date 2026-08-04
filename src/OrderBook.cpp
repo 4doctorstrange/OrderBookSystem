@@ -5,6 +5,7 @@
 OrderBook::OrderBook() {};
 
 std::vector<Trade> OrderBook::addOrder(Order& order) {
+    //order.price *= utils::tickMultiplier;   // Adjust price 
     auto trades = match(order);
 
     if (order.remQuantity && order.orderType == OrderType::LIMIT) {
@@ -35,7 +36,7 @@ std::vector<Trade> OrderBook::match(Order& order) {
                 order.remQuantity -= fill;
                 priceLevelList.totalQuantity -= fill;       // subtract the "fill" from total quantity of a level also
 
-                Trade tr(order.Oid, priceOrderItr ->Oid, it->first, fill );
+                Trade tr(order.Oid, priceOrderItr ->Oid, priceOrderItr->price, fill );
                 trades.push_back(tr);
                 
                 // Check if order in Ask is fullfilled or not
@@ -69,7 +70,7 @@ std::vector<Trade> OrderBook::match(Order& order) {
                 quantityCouldBeFulfilled -= fill;
                 order.remQuantity -= fill;
                 priceLevelList.totalQuantity -= fill;       // subtract the "fill" from total quantity of a level also
-                Trade tr(priceOrderItr -> Oid, order.Oid, it->first, fill );
+                Trade tr(priceOrderItr -> Oid, order.Oid, priceOrderItr->price, fill );
                 trades.push_back(tr);
                 // Check if order in BIDS is fullfilled or not
                 if (priceOrderItr->isFilled()) {

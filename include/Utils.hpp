@@ -13,5 +13,7 @@ namespace utils {
         auto nanoSec = std::chrono::duration_cast<std::chrono::nanoseconds>(duration);
         return nanoSec.count();
     }
+
+    const uint8_t tickMultiplier = 20 ; /* For storing decimal/paisa factor of a share price.  */
 }
 
