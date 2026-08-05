@@ -19,6 +19,7 @@ class OrderBook {
         void cancelOrder(const int& oid);
         void optimalCancelOrder(const int& oid);
         void rest(Order& order);
+        bool checkIfOrderCanBeCompleted(Order& order);
 };
 
 #endif

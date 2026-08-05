@@ -4,11 +4,33 @@
 
 OrderBook::OrderBook() {};
 
+bool OrderBook::checkIfOrderCanBeCompleted(Order& order) {
+    auto cutOffPrice = order.price; // cutoff price;
+    auto quantityRequested = order.remQuantity;
+
+    if (order.side == Side::BUY) {
+        auto it = Asks.begin();
+        while (it != Asks.end() && it->first <= cutOffPrice && quantityRequested) {
+            quantityRequested -= it->second.totalQuantity;
+            ++it;
+        }
+    } else {
+        auto it = Bids.begin();
+        while (it != Bids.end() && it->first >= cutOffPrice && quantityRequested) {
+            quantityRequested -= it->second.totalQuantity;
+            ++it;
+        }
+    }
+ 
+    if (quantityRequested > 0) return false;    //All Valid PRiceLevel can't complete order
+    return true;
+}
+
 std::vector<Trade> OrderBook::addOrder(Order& order) {
     //order.price *= utils::tickMultiplier;   // Adjust price 
     auto trades = match(order);
 
-    if (order.remQuantity && order.orderType == OrderType::LIMIT) {
+    if (order.remQuantity && order.orderType == OrderType::LIMIT) {  // MArket and IOC will drop the remaining Order
         rest(order); // need to define;
     }
 
@@ -19,6 +41,13 @@ std::vector<Trade> OrderBook::match(Order& order) {
     std::vector<Trade>  trades;
     auto cutOffPrice = order.price; // cutoff price;
     bool isMarket = (order.orderType == OrderType::MARKET); // market ignores the price limit
+
+    if (order.orderType == OrderType::FOK ) {
+        if (!(checkIfOrderCanBeCompleted(order))) {
+            return trades;
+        }
+    }
+    
 
     // Upcoming order is to buy, we'll start with smallest Ask
     if (order.side == Side::BUY) {

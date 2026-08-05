@@ -155,6 +155,86 @@ int main() {
         printBook(book);
     }
 
+    // Scenario 7: IOC order — partial fill, remainder dropped (NOT rested)
+    {
+        std::cout << "\n### Scenario 7: IOC (Immediate-Or-Cancel) ###\n";
+        OrderBook book;
+
+        auto a = limit(Side::SELL, 101, 50);
+        auto b = limit(Side::SELL, 102, 30);
+        book.addOrder(a);
+        book.addOrder(b);
+        printBook(book);
+
+        // IOC BUY 70 @ 101: only 50 available at <=101, fills 50, remaining 20 DROPPED
+        auto c = Order(Side::BUY, OrderType::IOC, 101, 70, 70);
+        printTrades("IOC BUY 70 @ 101 (should fill 50, drop 20)", book.addOrder(c));
+        printBook(book);  // expect: 102 ask still there, NO bid resting
+    }
+
+    // Scenario 8: IOC fully filled
+    {
+        std::cout << "\n### Scenario 8: IOC fully filled ###\n";
+        OrderBook book;
+
+        auto a = limit(Side::SELL, 101, 50);
+        book.addOrder(a);
+
+        // IOC BUY 30 @ 101: 50 available, only need 30 -> fully filled
+        auto c = Order(Side::BUY, OrderType::IOC, 101, 30, 30);
+        printTrades("IOC BUY 30 @ 101 (fully filled)", book.addOrder(c));
+        printBook(book);  // expect: ask has 20 remaining
+    }
+
+    // Scenario 9: FOK rejected — not enough quantity
+    {
+        std::cout << "\n### Scenario 9: FOK rejected (insufficient qty) ###\n";
+        OrderBook book;
+
+        auto a = limit(Side::SELL, 101, 50);
+        book.addOrder(a);
+        printBook(book);
+
+        // FOK BUY 80 @ 101: need 80 but only 50 available -> REJECT entirely
+        auto c = Order(Side::BUY, OrderType::FOK, 101, 80, 80);
+        printTrades("FOK BUY 80 @ 101 (REJECT, only 50 avail)", book.addOrder(c));
+        printBook(book);  // expect: book UNCHANGED (ask 50 still there)
+    }
+
+    // Scenario 10: FOK accepted — exact quantity available
+    {
+        std::cout << "\n### Scenario 10: FOK accepted (enough qty) ###\n";
+        OrderBook book;
+
+        auto a = limit(Side::SELL, 101, 50);
+        auto b = limit(Side::SELL, 101, 30);
+        book.addOrder(a);
+        book.addOrder(b);
+        printBook(book);
+
+        // FOK BUY 80 @ 101: need 80, available = 50+30 = 80 -> FILL ALL
+        auto c = Order(Side::BUY, OrderType::FOK, 101, 80, 80);
+        printTrades("FOK BUY 80 @ 101 (should fill all 80)", book.addOrder(c));
+        printBook(book);  // expect: book empty
+    }
+
+    // Scenario 11: FOK rejected — price limit exceeded
+    {
+        std::cout << "\n### Scenario 11: FOK rejected (price limit) ###\n";
+        OrderBook book;
+
+        auto a = limit(Side::SELL, 101, 50);
+        auto b = limit(Side::SELL, 103, 50);
+        book.addOrder(a);
+        book.addOrder(b);
+        printBook(book);
+
+        // FOK BUY 80 @ 102: need 80, only 50 at <=102 -> REJECT
+        auto c = Order(Side::BUY, OrderType::FOK, 102, 80, 80);
+        printTrades("FOK BUY 80 @ 102 (only 50 avail at <=102, REJECT)", book.addOrder(c));
+        printBook(book);  // expect: book UNCHANGED
+    }
+
     std::cout << "\nDone.\n";
     return 0;
 }
