@@ -6,6 +6,7 @@
 #include <map>
 #include <unordered_map>
 #include <vector>
+#include <optional>
 
 class OrderBook {
     public: 
@@ -20,6 +21,9 @@ class OrderBook {
         void optimalCancelOrder(const int& oid);
         void rest(Order& order);
         bool checkIfOrderCanBeCompleted(Order& order);
+        std::optional<int> bestBid();  // highest price buyer is willing to pay
+        std::optional<int> bestAsk();  // Lowest price seller is accepting 
+        std::optional<int> spread();  // difference between the above
 };
 
 #endif

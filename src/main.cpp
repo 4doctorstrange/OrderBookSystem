@@ -1,6 +1,8 @@
 #include "../include/OrderBook.hpp"
 #include <iostream>
 #include <string>
+#include <cassert>
+#include <optional>
 
 // ---- small printing helpers -------------------------------------------------
 
@@ -41,6 +43,68 @@ static Order limit(Side s, double price, int qty) {
 }
 static Order market(Side s, int qty) {
     return Order(s, OrderType::MARKET, 0.0, qty, qty);
+}
+
+// ----------------------------------------------------------------------------
+// Top-of-book tests: bestBid() / bestAsk() / spread()
+// Prices are stored in ticks (price * tickMultiplier), so expected values use
+// this helper to convert a human price into the tick value the book returns.
+static int64_t ticksOf(double price) {
+    return static_cast<int64_t>(price * utils::tickMultiplier);
+}
+
+template <typename Opt>
+static std::string optStr(const Opt& o) {
+    return o ? std::to_string(*o) : std::string("<none>");
+}
+
+static void testTopOfBook() {
+    std::cout << "\n### TEST: bestBid / bestAsk / spread ###\n";
+    OrderBook book;
+
+    // 1) Empty book -> all three are empty (nullopt).
+    assert(!book.bestBid().has_value()  && "empty book: bestBid must be nullopt");
+    assert(!book.bestAsk().has_value()  && "empty book: bestAsk must be nullopt");
+    assert(!book.spread().has_value()   && "empty book: spread must be nullopt");
+
+    // 2) One resting bid @100 -> bestBid set, ask/spread still empty.
+    auto b1 = limit(Side::BUY, 100.00, 10);
+    book.addOrder(b1);
+    assert(book.bestBid().has_value() && *book.bestBid() == ticksOf(100.00));
+    assert(!book.bestAsk().has_value());
+    assert(!book.spread().has_value() && "spread needs both sides");
+
+    // 3) One resting ask @101 -> bestAsk set, spread = ask - bid = 1.00 in ticks.
+    auto a1 = limit(Side::SELL, 101.00, 10);
+    book.addOrder(a1);
+    assert(*book.bestAsk() == ticksOf(101.00));
+    assert(book.spread().has_value());
+    assert(*book.spread() == ticksOf(101.00) - ticksOf(100.00) && "spread = ask - bid, must be positive");
+
+    // 4) A better (higher) bid @100.50 becomes the new best bid; spread tightens.
+    auto b2 = limit(Side::BUY, 100.50, 5);
+    book.addOrder(b2);
+    assert(*book.bestBid() == ticksOf(100.50) && "best bid = highest bid");
+    assert(*book.spread() == ticksOf(101.00) - ticksOf(100.50));
+
+    // 5) A better (lower) ask @100.75 becomes the new best ask; spread tightens again.
+    auto a2 = limit(Side::SELL, 100.75, 5);
+    book.addOrder(a2);
+    assert(*book.bestAsk() == ticksOf(100.75) && "best ask = lowest ask");
+    assert(*book.spread() == ticksOf(100.75) - ticksOf(100.50));
+
+    // 6) Consume the entire best-bid level (100.50) with a crossing sell.
+    //    best bid should fall back to the next level (100.00).
+    auto s = limit(Side::SELL, 100.50, 5);   // fills b2 (5 @ 100.50) exactly
+    book.addOrder(s);
+    assert(*book.bestBid() == ticksOf(100.00) && "after consuming top level, best bid drops to next");
+
+    // 7) Cancel remaining bid -> bid side empty -> bestBid & spread empty again.
+    book.optimalCancelOrder(b1.Oid);
+    assert(!book.bestBid().has_value() && "no bids left -> bestBid nullopt");
+    assert(!book.spread().has_value());
+
+    std::cout << "All top-of-book assertions passed.\n";
 }
 
 // ----------------------------------------------------------------------------
@@ -234,6 +298,8 @@ int main() {
         printTrades("FOK BUY 80 @ 102 (only 50 avail at <=102, REJECT)", book.addOrder(c));
         printBook(book);  // expect: book UNCHANGED
     }
+
+    testTopOfBook();
 
     std::cout << "\nDone.\n";
     return 0;

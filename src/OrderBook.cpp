@@ -205,3 +205,26 @@ void OrderBook::optimalCancelOrder(const int& oid) {
     // remove from raw;
     OrdersInBook.erase(oid);
 }
+
+std::optional<int> OrderBook::bestBid() {
+    if (!Bids.empty()) {
+        return Bids.begin()->first;
+    } 
+    return std::nullopt;
+}
+
+std::optional<int> OrderBook::bestAsk() {
+    if (!Asks.empty()) {
+        return Asks.begin()->first;
+    }
+    return std::nullopt;
+}
+
+std::optional<int> OrderBook::spread() {
+    auto best_bid = bestBid();
+    auto best_ask = bestAsk();
+    if (best_bid && best_ask) {
+        return *best_ask - *best_bid;
+    }
+    return std::nullopt;
+}
