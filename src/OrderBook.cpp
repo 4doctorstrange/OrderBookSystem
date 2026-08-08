@@ -198,7 +198,6 @@ void OrderBook::optimalCancelOrder(const int& oid) {
 
         // If a Price level is empty remove that empty level from Asks
         if (priceLevel.isEmpty()) {
-           std::cout << "HITTING" << std::endl;
             Asks.erase(priceLevelItr);
         }
     }

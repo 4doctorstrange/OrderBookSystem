@@ -8,15 +8,45 @@ project (OrderBook LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Create executable from source files
-add_executable(myapp
-    src/main.cpp
+# Create Static library
+add_library(book STATIC
     src/Order.cpp
     src/OrderBook.cpp
     src/PriceLevel.cpp
     src/Trade.cpp
 )
 
-# Include directories (where headers live)
-target_include_directories(myapp PRIVATE include/)
+# Include Headers or .hpp files 
+target_include_directories(book PUBLIC include/)
+
+# Create executable binary from source files
+add_executable(myapp src/main.cpp)
+
+# Link Library to executable
+target_link_libraries(myapp PRIVATE book)
+
+#### Test Enabling:
+
+# REQUIRED forces CMake to stop if GoogleTest is missing
+find_package(GTest REQUIRED)
+
+# BUILD AND CONFIGURE TESTS 
+
+enable_testing()
+
+# create test executable
+add_executable(unitTest test/unitTest.cpp)
+
+# Link your library and the local Brew GTest targets
+
+target_link_libraries(unitTest PRIVATE
+    book
+    GTest::gtest_main
+)
+
+# Discover tests automatically
+include(GoogleTest)
+gtest_discover_tests(unitTest)
+
+
 
