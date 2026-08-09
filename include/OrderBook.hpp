@@ -18,7 +18,7 @@ class OrderBook {
         std::vector<Trade> addOrder(Order& order); // will return all the trades this order has generated
         std::vector<Trade> match(Order& order);
         void cancelOrder(const int& oid);
-        void optimalCancelOrder(const int& oid);
+        bool optimalCancelOrder(const int& oid);
         void rest(Order& order);
         bool checkIfOrderCanBeCompleted(Order& order);
         std::optional<int> bestBid();  // highest price buyer is willing to pay

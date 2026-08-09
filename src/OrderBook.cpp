@@ -1,6 +1,7 @@
 
 #include "../include/OrderBook.hpp"
 #include <iostream>
+#include <stdexcept>
 
 OrderBook::OrderBook() {};
 
@@ -71,7 +72,9 @@ std::vector<Trade> OrderBook::match(Order& order) {
                 // Check if order in Ask is fullfilled or not
                 if (priceOrderItr->isFilled()) {
                     // delete current order
+                    OrdersInBook.erase(priceOrderItr->Oid);  // remove from All orders map
                     priceOrderItr = priceLevelList.orders.erase(priceOrderItr);
+                    
                 } else {
                     ++priceOrderItr;
                 }
@@ -104,7 +107,9 @@ std::vector<Trade> OrderBook::match(Order& order) {
                 // Check if order in BIDS is fullfilled or not
                 if (priceOrderItr->isFilled()) {
                     // delete current order
+                    OrdersInBook.erase(priceOrderItr->Oid);         // remove from All orders map
                     priceOrderItr = priceLevelList.orders.erase(priceOrderItr);
+                    
                 } else {
                     ++priceOrderItr;
                 }
@@ -177,8 +182,14 @@ void OrderBook::cancelOrder(const int& id) {
     }
 }
 
-void OrderBook::optimalCancelOrder(const int& oid) {
-    auto& orderItr = OrdersInBook[oid];
+bool OrderBook::optimalCancelOrder(const int& oid) {
+
+    auto it = OrdersInBook.find(oid);
+    if (it == OrdersInBook.end()) {
+        return false;            // Cancel can;t happen;
+    }
+    
+    auto& orderItr = it->second;
     
     // order is in BUY
     if (orderItr->side == Side::BUY) {
@@ -202,7 +213,8 @@ void OrderBook::optimalCancelOrder(const int& oid) {
         }
     }
     // remove from raw;
-    OrdersInBook.erase(oid);
+    OrdersInBook.erase(it);
+    return true;
 }
 
 std::optional<int> OrderBook::bestBid() {

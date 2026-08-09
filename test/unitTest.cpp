@@ -350,3 +350,39 @@ TEST(FOK, FOK_REJECTED_PRICE_LIMIT) {
     EXPECT_EQ(it->second.totalQuantity + (++it)->second.totalQuantity, 80);  // no change in Asks
     
 }
+
+// Scenario 12: Cancel a valid resting Order in book
+TEST(CANCEL_ORDER, VALID_CANCEL) {
+    OrderBook book;
+    auto a = limit(Side::SELL, 101, 50);
+    auto res = book.addOrder(a);
+
+    auto b = limit(Side::BUY, 101, 80);
+    res = book.addOrder(b);
+
+    ASSERT_TRUE(res.size());    // 1 trade happen;
+
+    //verify trade
+    const Trade& t1 = res[0];
+    EXPECT_EQ(t1.price, ticksOf(101));
+    EXPECT_EQ(t1.quantity, 50);
+    EXPECT_EQ(t1.buyOrderId, b.Oid);
+    EXPECT_EQ(t1.sellOrderId, a.Oid);
+
+    // verify book
+    EXPECT_EQ(book.Asks.size(), 0u);  // 0 asks
+    EXPECT_EQ(book.Bids.size(), 1u);  // 1 resting order;
+    EXPECT_EQ(book.Bids.begin()->second.orders.front().Oid, b.Oid);   // b is only remaing order
+    EXPECT_EQ(book.Bids.begin()->second.orders.front().remQuantity, 30);   // b is only remaing order
+
+    // Now cancel B and A
+    auto status = book.optimalCancelOrder(a.Oid);
+    ASSERT_FALSE(status);      // Status must be false as a order is not is book
+
+    status = book.optimalCancelOrder(b.Oid);
+    ASSERT_TRUE(status);     // must be true as b is valid resting order in book
+
+    status = book.optimalCancelOrder(b.Oid);
+    ASSERT_FALSE(status);    // Double free shouldn;t be allowed, so it shoudl return false
+
+} 
