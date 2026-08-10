@@ -17,6 +17,67 @@ static int64_t ticksOf(double price) {
     return static_cast<int64_t>(price * utils::tickMultiplier);
 }
 
+void checkInVariants(const OrderBook& book) {
+
+    auto totalOrders = book.OrdersInBook.size();
+    auto totalOrderCount = 0;
+
+    // Check total Quantity in Asks;
+    auto askItr = book.Asks.begin();
+    while (askItr != book.Asks.end()) {
+        const auto& priceAtLevel =  askItr->first;
+        const auto& priceLevel = askItr->second;
+        auto totalQuantityInPriceLevel = priceLevel.totalQuantity;
+        auto ordersItr = priceLevel.orders.begin();
+        
+        ASSERT_FALSE(priceLevel.orders.empty()); // Order list in a price level can;t be empty. For Price level to exist atleast 1 valid order must be there
+        totalOrderCount += priceLevel.orders.size();
+        int remQty = 0;
+        while (ordersItr != priceLevel.orders.end()) {
+            ASSERT_TRUE(ordersItr->remQuantity > 0);
+            remQty += ordersItr->remQuantity;
+            ASSERT_EQ(priceAtLevel, ordersItr->price);
+
+            auto findItr = book.OrdersInBook.find(ordersItr->Oid);
+            ASSERT_TRUE(findItr != book.OrdersInBook.end());    // Current order itr must be equal to itr in OrdersInBook;
+            ordersItr++;
+        }
+
+        ASSERT_EQ(totalQuantityInPriceLevel, remQty); // Sum of all remainingQty of orders in a Price level must be consistent with Price'level totalQty 
+
+        ++askItr;   // Move to next price level in Ask
+    }
+
+    // Check total Quantity in Bids;
+    auto bidItr = book.Bids.begin();
+    while (bidItr != book.Bids.end()) {
+        const auto& priceAtLevel =  bidItr->first;
+        const auto&  priceLevel = bidItr->second;
+        auto totalQuantityInPriceLevel = priceLevel.totalQuantity;
+        auto ordersItr = priceLevel.orders.begin();
+        
+        ASSERT_FALSE(priceLevel.orders.empty()); // Order list in a price level can;t be empty. For Price level to exist atleast 1 valid order must be there
+        totalOrderCount += priceLevel.orders.size();
+        int remQty = 0;
+        while (ordersItr != priceLevel.orders.end()) {
+            ASSERT_TRUE(ordersItr->remQuantity > 0);
+            remQty += ordersItr->remQuantity;
+            ASSERT_EQ(priceAtLevel, ordersItr->price);
+
+            auto findItr = book.OrdersInBook.find(ordersItr->Oid);
+            ASSERT_TRUE(findItr != book.OrdersInBook.end());   // no missing index entry    // Current order itr must be equal to itr in OrdersInBook;
+            ordersItr++;
+        }
+
+        ASSERT_EQ(totalQuantityInPriceLevel, remQty); // Sum of all remainingQty of orders in a Price level must be consistent with Price'level totalQty 
+
+        ++bidItr;
+    }
+
+    ASSERT_EQ(totalOrders, totalOrderCount);
+
+}
+
 
 TEST(Basictest, EmptyBookTest) {
     OrderBook book;
@@ -30,18 +91,21 @@ TEST(Basictest, EmptyBookTest) {
 TEST(LimitMatch, RestThenFullFill) {
     OrderBook book;
 
+    checkInVariants(book);
     // --- 1) SELL 50 @ 101 rests: no trade, one ask level ---
     auto a = limit(Side::SELL, 101.00, 50);
     auto res = book.addOrder(a);
     EXPECT_TRUE(res.empty());                 // nothing to cross -> no trades
     EXPECT_EQ(book.Asks.size(), 1u);
 
+    checkInVariants(book);
     // --- 2) BUY 100 @ 100 rests: below the ask, no cross ---
     auto b = limit(Side::BUY, 100.00, 100);
     res = book.addOrder(b);
     EXPECT_TRUE(res.empty());
     EXPECT_EQ(book.Bids.size(), 1u);
 
+    checkInVariants(book);
     // --- 3) BUY 50 @ 101 crosses and fully fills ask 'a' ---
     auto c = limit(Side::BUY, 101.00, 50);
     res = book.addOrder(c);
@@ -54,12 +118,16 @@ TEST(LimitMatch, RestThenFullFill) {
     EXPECT_EQ(t.buyOrderId, c.Oid);           // aggressor = the incoming buy
     EXPECT_EQ(t.sellOrderId, a.Oid);          // maker = the resting sell
 
+    checkInVariants(book);
     // --- 4) resulting book state ---
     EXPECT_EQ(book.Asks.size(), 0u);          // ask level fully consumed & removed
     ASSERT_EQ(book.Bids.size(), 1u);          // the untouched bid still rests
     EXPECT_EQ(book.bestBid(), ticksOf(100.00));
     // the resting bid's quantity was never touched
     EXPECT_EQ(book.Bids.begin()->second.orders.front().remQuantity, 100);
+
+
+    checkInVariants(book);
 }
 
 // Scenario 2: sweep multiple ask levels (price priority).
