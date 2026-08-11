@@ -104,6 +104,9 @@ around a mid price (a heavy add + match workload), Apple Silicon:
 |-----------------------|---------------------|
 | Throughput            | ~1.17 M orders/sec  |
 | Average latency       | ~855 ns/order       |
+| P-50                  | ~708 ns/order       |
+| P-99                  | >= 2625 ns/order    |
+| P-99.9                | >= 5250 ns/order    |
 
 > This is the **unoptimized baseline** (`std::map` + `std::list`). It is the "before"
 > figure for the performance work in the roadmap. Latency percentiles (P50/P99/P99.9)
