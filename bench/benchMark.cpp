@@ -1,5 +1,6 @@
 
 #include "../include/OrderBook.hpp"
+#include <atomic>
 #include <random>
 #include <vector>
 #include <chrono>
@@ -26,8 +27,8 @@ std::vector<Order> getBenchData() {
     
 }
 
-int main() {
-    auto sample = getBenchData();
+
+void averageBaseLine(std::vector<Order>& sample) {
     OrderBook book;
     auto start = std::chrono::steady_clock::now();
 
@@ -36,18 +37,44 @@ int main() {
     }
     auto end = std::chrono::steady_clock::now();
     auto elapsed_time = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count();
-    int throughput = SampleSize / (elapsed_time/1e6);  // Number of order executed per ms
-    std::cout << "Time Elapsed: " << elapsed_time << "ns , throughput :" << throughput << " orders/ms" << std::endl;
+    double nsPerOrder = static_cast<double>(elapsed_time) / SampleSize;
+    std::cout << "Time Elapsed: " << elapsed_time << "ns , throughput :" << nsPerOrder << " ns/order" << std::endl;
+}
+
+void percentileBaseline(std::vector<Order>& sample) {
+    OrderBook book;
+    std::vector<uint64_t> timeTaken;
+    timeTaken.reserve(SampleSize);
+
+    for (auto& order: sample) {
+        auto start = std::chrono::steady_clock::now();
+        book.addOrder(order);
+        auto end = std::chrono::steady_clock::now();
+        auto elapsed_time = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count();
+        timeTaken.push_back(elapsed_time);
+    }
+    
+    sort(timeTaken.begin(), timeTaken.end());
+    std::cout << "P50: " << timeTaken[0.5 * SampleSize] << " ns |  P99: " << timeTaken[0.99 * SampleSize] << " ns |  P99.9: " << timeTaken[0.999 * SampleSize] << "ns " <<  std::endl;
+}
+
+int main() {
+    auto sample1 = getBenchData();
+    averageBaseLine(sample1);
+
+    auto sample2 = getBenchData();
+    percentileBaseline(sample2);
 
 }
 
 /* 
 BASELINE NUMBERS:
 harshrajput@JNPR-MAC-0TQJVJ OrderBook % ./build/order_bench
-Time Elapsed: 7576845875ns , throughput :1319 orders/ms
+Time Elapsed: 8338592542ns , throughput :833.859 ns/order
 
-Elapsed: 7.58 s for 10M orders
-Throughput: 1319 orders/ms = ~1.32 M orders/sec
-Average latency: 7.58e9 ns / 10e6 = ~758 ns/order
+P50: 708 ns |  P99: 2625 ns |  P99.9: 5250ns 
+P50 = 708 ns → "50% of orders took ≤ 708 ns."
+P99 = 2625 ns → "slowest 1% took more than 2625 ns"
+P99.9 = 5250 ns → "only the slowest 0.1% took more than 5250 ns."
 
 */
