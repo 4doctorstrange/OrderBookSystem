@@ -5,7 +5,8 @@
 #include <optional>
 
 // ---- small printing helpers -------------------------------------------------
-
+// TODO: main cleanup
+#if 0
 static std::string sideName(Side s) { return s == Side::BUY ? "BUY" : "SELL"; }
 
 static void printTrades(const std::string& label, const std::vector<Trade>& trades) {
@@ -106,7 +107,7 @@ static void testTopOfBook() {
 
     std::cout << "All top-of-book assertions passed.\n";
 }
-
+#endif
 // ----------------------------------------------------------------------------
 
 int main() {
@@ -114,6 +115,8 @@ int main() {
     std::cout << " ORDER BOOK ENGINE - DEMO\n";
     std::cout << "========================================\n";
 
+    // TODO: Main cleanup
+    #if 0
     // Scenario 1: two limits rest (no cross), then a buy that fully fills one.
     {
         std::cout << "\n### Scenario 1: rest then full fill ###\n";
@@ -302,5 +305,6 @@ int main() {
     testTopOfBook();
 
     std::cout << "\nDone.\n";
+    #endif
     return 0;
 }

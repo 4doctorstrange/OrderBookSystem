@@ -14,7 +14,7 @@ class PriceLevel {
         std::list<Order>::iterator addOrder(Order& order);
         void removeOrder(std::list<Order>::iterator&  order);
         Order& front();
-        bool isEmpty();
+        bool isEmpty() const;
 
 
 };

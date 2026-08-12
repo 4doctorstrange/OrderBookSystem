@@ -20,6 +20,6 @@ Order& PriceLevel::front() {
     return orders.front();
 }
 
-bool PriceLevel::isEmpty() {
+bool PriceLevel::isEmpty() const {
     return orders.empty();
 }

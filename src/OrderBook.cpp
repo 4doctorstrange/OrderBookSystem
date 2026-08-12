@@ -3,23 +3,35 @@
 #include <iostream>
 #include <stdexcept>
 
-OrderBook::OrderBook() {};
+OrderBook::OrderBook() {
+    Bids.reserve(Max_Ticks);
+    Asks.reserve(Max_Ticks);
+    for (auto i = 0; i < Max_Ticks; i++) {
+        Bids.emplace_back(MIN_TICK + i);    // level's price = its tick
+        Asks.emplace_back(MIN_TICK + i);
+    }
+    bestAskIdx = -1;
+    bestBidIdx = Max_Ticks;
+};
 
 bool OrderBook::checkIfOrderCanBeCompleted(Order& order) {
-    auto cutOffPrice = order.price; // cutoff price;
+    auto cutOffPrice = order.price - MIN_TICK; // cutoff price;
     auto quantityRequested = order.remQuantity;
 
     if (order.side == Side::BUY) {
-        auto it = Asks.begin();
-        while (it != Asks.end() && it->first <= cutOffPrice && quantityRequested) {
-            quantityRequested -= it->second.totalQuantity;
-            ++it;
+        for (int i = 0; i < Max_Ticks && i <= cutOffPrice; i++) {
+            auto priceLevel = Asks[i];
+            if (!priceLevel.isEmpty()) {
+                quantityRequested -= priceLevel.totalQuantity;
+            }
         }
+
     } else {
-        auto it = Bids.begin();
-        while (it != Bids.end() && it->first >= cutOffPrice && quantityRequested) {
-            quantityRequested -= it->second.totalQuantity;
-            ++it;
+        for (int i = 0; i < Max_Ticks && i >= cutOffPrice; i++) {
+            auto priceLevel = Bids[i];
+            if (!priceLevel.isEmpty()) {
+                quantityRequested -= priceLevel.totalQuantity;
+            }
         }
     }
  
@@ -40,7 +52,7 @@ std::vector<Trade> OrderBook::addOrder(Order& order) {
 
 std::vector<Trade> OrderBook::match(Order& order) {
     std::vector<Trade>  trades;
-    auto cutOffPrice = order.price; // cutoff price;
+    auto cutOffPrice = order.price - MIN_TICK; // cutoff price;
     bool isMarket = (order.orderType == OrderType::MARKET); // market ignores the price limit
 
     if (order.orderType == OrderType::FOK ) {
@@ -52,10 +64,16 @@ std::vector<Trade> OrderBook::match(Order& order) {
 
     // Upcoming order is to buy, we'll start with smallest Ask
     if (order.side == Side::BUY) {
-        auto it = Asks.begin();
+        // auto it = Asks.begin();
+        int Idx = bestAskIdx;
         
-        while (it != Asks.end() && (isMarket || it->first <= cutOffPrice) && order.remQuantity) {    // we got atleast one pricelevel 
-            auto& priceLevelList = it->second;
+        while (Idx >= 0 && Idx < Max_Ticks && (isMarket || Idx <= cutOffPrice) && order.remQuantity) {    // we got atleast one pricelevel 
+            auto& priceLevelList = Asks[Idx];
+            // if Price level is empty , then continue
+            if (priceLevelList.isEmpty()) {
+                ++Idx;
+                continue;
+            }
             auto priceOrderItr = priceLevelList.orders.begin();
 
             while (priceOrderItr != priceLevelList.orders.end() && order.remQuantity) {
@@ -80,22 +98,30 @@ std::vector<Trade> OrderBook::match(Order& order) {
                 }
             }
 
-            if (it->second.isEmpty()) {  // Remove a prive level, if all the orders are filled
-                it = Asks.erase(it);
-            } else {
-                ++it;
+            // If current Price level become empty and it was bestPrice, then we need to find next best
+            if (priceLevelList.isEmpty() && priceLevelList.price - MIN_TICK == bestAskIdx) {
+                getNextBestAskIdx();
             }
-            
+
+            ++Idx;  
         }  
         
     }
 
     // Upcoming order is Sell, we'll sell the order to higherst bidder
     else {
-        auto it = Bids.begin();
-        while (it != Bids.end() && (isMarket || it -> first >= cutOffPrice) && order.remQuantity) {    // atelast one bidder satisfies 
-            auto& priceLevelList = it ->second; // fetch linked list orders
+        // auto it = Bids.begin();
+        int Idx = bestBidIdx;
+        
+        while (Idx >=0 && Idx < Max_Ticks && (isMarket ||  Idx >= cutOffPrice) && order.remQuantity) {    // atelast one bidder satisfies 
+            auto& priceLevelList = Bids[Idx]; // fetch linked list orders
+            // if Price level is empty , then continue
+            if (priceLevelList.isEmpty()) {
+                ++Idx;
+                continue;
+            }
             auto priceOrderItr = priceLevelList.orders.begin();
+
             while (priceOrderItr != priceLevelList.orders.end() && order.remQuantity) {
                 int& quantityCouldBeFulfilled = priceOrderItr->remQuantity;
                 int fill = std::min(quantityCouldBeFulfilled, order.remQuantity);
@@ -107,21 +133,21 @@ std::vector<Trade> OrderBook::match(Order& order) {
                 // Check if order in BIDS is fullfilled or not
                 if (priceOrderItr->isFilled()) {
                     // delete current order
-                    OrdersInBook.erase(priceOrderItr->Oid);         // remove from All orders map
+                    OrdersInBook.erase(priceOrderItr->Oid);         // remove from All orders map                   
                     priceOrderItr = priceLevelList.orders.erase(priceOrderItr);
                     
                 } else {
                     ++priceOrderItr;
                 }
             }
-            if (it->second.isEmpty()) { // Remove a prive level, if all the orders are filled
-                it = Bids.erase(it);
-            } else {
-                ++it;
+
+            // If current Price level become empty and it was bestPrice, then we need to find next best
+            if (priceLevelList.isEmpty() && priceLevelList.price - MIN_TICK == bestBidIdx) {
+                getNextBestBidIdx();
             }
+            --Idx;
             
         }
-        
     }
 
     return trades;
@@ -140,47 +166,49 @@ void OrderBook::rest(Order& order) {
     
     std::list<Order>::iterator objectItr;
     if (order.side == Side::SELL) {
-        auto itr = Asks.find(order.price);
-        if (itr == Asks.end()) {
-            itr = Asks.emplace(order.price, PriceLevel(order.price)).first;
-        } 
-        objectItr = itr->second.addOrder(order);
+        if (order.price - MIN_TICK < bestAskIdx ||  bestAskIdx == -1) {
+            bestAskIdx = order.price - MIN_TICK;
+        }
+        
+        objectItr = Asks[order.price - MIN_TICK].addOrder(order);
         
     } else {
-        auto itr = Bids.find(order.price);
-        if (itr == Bids.end()) {
-            itr = Bids.emplace(order.price, PriceLevel(order.price)).first;
-        } 
-        objectItr = itr->second.addOrder(order);
+        if (order.price - MIN_TICK > bestBidIdx ||  bestBidIdx == Max_Ticks) {
+            bestBidIdx = order.price - MIN_TICK;
+        }
+        objectItr = Bids[order.price - MIN_TICK].addOrder(order);
     }
 
     OrdersInBook[order.Oid] = objectItr;
 } 
 
-void OrderBook::cancelOrder(const int& id) {
+/*
+TODO: This function is not updated and will not compile, either remove or fix it
+*/ 
+// void OrderBook::cancelOrder(const int& id) {
 
-    // Check order in Bids
-    for (auto priceLevelItr = Bids.begin(); priceLevelItr != Bids.end(); ++priceLevelItr) {
-        auto& orderLists = priceLevelItr->second.orders;
-        for (auto orderItr = orderLists.begin(); orderItr != orderLists.end(); ++orderItr) {
-            if (orderItr->Oid == id) {
-                orderItr = orderLists.erase(orderItr);
-                return;
-            }
-        }
-    }
+//     // Check order in Bids
+//     for (auto priceLevelItr = Bids.begin(); priceLevelItr != Bids.end(); ++priceLevelItr) {
+//         auto& orderLists = priceLevelItr->second.orders;
+//         for (auto orderItr = orderLists.begin(); orderItr != orderLists.end(); ++orderItr) {
+//             if (orderItr->Oid == id) {
+//                 orderItr = orderLists.erase(orderItr);
+//                 return;
+//             }
+//         }
+//     }
 
-    // check order in Asks
-    for (auto priceLevelItr = Asks.begin(); priceLevelItr != Asks.end(); ++priceLevelItr) {
-        auto& orderLists = priceLevelItr->second.orders;
-        for (auto orderItr = orderLists.begin(); orderItr != orderLists.end(); ++orderItr) {
-            if (orderItr->Oid == id) {
-                orderItr = orderLists.erase(orderItr);
-                break;
-            }
-        }
-    }
-}
+//     // check order in Asks
+//     for (auto priceLevelItr = Asks.begin(); priceLevelItr != Asks.end(); ++priceLevelItr) {
+//         auto& orderLists = priceLevelItr->second.orders;
+//         for (auto orderItr = orderLists.begin(); orderItr != orderLists.end(); ++orderItr) {
+//             if (orderItr->Oid == id) {
+//                 orderItr = orderLists.erase(orderItr);
+//                 break;
+//             }
+//         }
+//     }
+// }
 
 bool OrderBook::optimalCancelOrder(const int& oid) {
 
@@ -193,23 +221,27 @@ bool OrderBook::optimalCancelOrder(const int& oid) {
     
     // order is in BUY
     if (orderItr->side == Side::BUY) {
-        auto priceLevelItr = Bids.find(orderItr -> price);
-        auto& priceLevel = priceLevelItr->second;
+        auto& priceLevel = Bids[orderItr -> price - MIN_TICK];
+        // auto& priceLevel = priceLevelItr;
         priceLevel.removeOrder(orderItr);
         
         // If a Price level is empty remove that empty level from BIDS
-        if (priceLevel.isEmpty()) {
-            Bids.erase(priceLevelItr);
+        if (priceLevel.isEmpty() && bestBidIdx == orderItr -> price - MIN_TICK) {
+
+            // find new bestBidIdx as cuurent priceLevel is going to be empty;
+
+            getNextBestBidIdx();
         }
 
     } else {
-        auto priceLevelItr = Asks.find(orderItr -> price);
-        auto& priceLevel = priceLevelItr->second;
+        auto& priceLevel = Asks[orderItr -> price - MIN_TICK];
         priceLevel.removeOrder(orderItr);
 
         // If a Price level is empty remove that empty level from Asks
-        if (priceLevel.isEmpty()) {
-            Asks.erase(priceLevelItr);
+        if (priceLevel.isEmpty() && bestAskIdx == orderItr -> price - MIN_TICK) {
+            // find new bestAskIdx as cuurent priceLevel  is going to be empty;
+            getNextBestAskIdx();
+            
         }
     }
     // remove from raw;
@@ -218,15 +250,17 @@ bool OrderBook::optimalCancelOrder(const int& oid) {
 }
 
 std::optional<int> OrderBook::bestBid() {
-    if (!Bids.empty()) {
-        return Bids.begin()->first;
-    } 
+    // Best bids will be present in non empty index
+    if (bestBidIdx != Max_Ticks) {
+        return bestBidIdx + MIN_TICK;
+    }
     return std::nullopt;
 }
 
 std::optional<int> OrderBook::bestAsk() {
-    if (!Asks.empty()) {
-        return Asks.begin()->first;
+    // Best bids will be present in starting 
+    if (bestAskIdx != -1) {
+        return bestAskIdx + MIN_TICK;
     }
     return std::nullopt;
 }
@@ -238,4 +272,30 @@ std::optional<int> OrderBook::spread() {
         return *best_ask - *best_bid;
     }
     return std::nullopt;
+}
+
+
+void OrderBook:: getNextBestBidIdx() {
+    auto k  = bestBidIdx - 1;      // will look in left hand side 
+    bestBidIdx = Max_Ticks;  // will remain Max_Ticks if better option is not found, otherwise it will get updated
+    
+    for (int i = k; i >= 0 ; --i) {
+        if (!Bids[i].isEmpty()) {
+            bestBidIdx = i;
+            break;
+        }
+    }
+}
+
+void OrderBook:: getNextBestAskIdx() {
+    auto k  = bestAskIdx + 1;      // will look in left hand side 
+    bestAskIdx = -1;  // will remain -1 if better option is not found, otherwise it will get updated
+    
+    for (int i = k; i < Max_Ticks; ++i) {
+        if (!Asks[i].isEmpty()) {
+            bestAskIdx = i;
+            break;
+        }
+    }
+
 }
