@@ -68,8 +68,7 @@ int main() {
 }
 
 /* 
-BASELINE NUMBERS:
-harshrajput@JNPR-MAC-0TQJVJ OrderBook % ./build/order_bench
+BASELINE NUMBERS (./build/order_bench):
 Time Elapsed: 8338592542ns , throughput :833.859 ns/order
 
 P50: 708 ns |  P99: 2625 ns |  P99.9: 5250ns 
