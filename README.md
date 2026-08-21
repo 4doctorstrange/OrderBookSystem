@@ -95,22 +95,35 @@ ctest --test-dir build --output-on-failure
 
 ---
 
-## Benchmark (baseline — unoptimized)
+## Benchmark & performance journal
 
-Single-threaded, `-O3 -march=native`, 10,000,000 randomized limit orders clustered
-around a mid price (a heavy add + match workload), Apple Silicon:
+Single-threaded, `-O3 -march=native`, 10,000,000 randomized `LIMIT` orders (seed 42)
+with prices uniform over 201 ticks (a heavy add + match workload), Apple Silicon
+laptop. Latency measured per order with `steady_clock`. Each variant was re-run 5×
+back-to-back in one sitting; values below are the **medians**.
 
-| Metric                | Baseline            |
-|-----------------------|---------------------|
-| Throughput            | ~1.17 M orders/sec  |
-| Average latency       | ~855 ns/order       |
-| P-50                  | ~708 ns/order       |
-| P-99                  | >= 2625 ns/order    |
-| P-99.9                | >= 5250 ns/order    |
+| Variant (branch / commit)              | avg ns/order | P-50   | P-99     | P-99.9\*  |
+|----------------------------------------|-------------:|-------:|---------:|----------:|
+| `std::map` price levels — baseline (`main`) | **845**  | 708 ns | 2834 ns  | 6250 ns   |
+| flat `vector<PriceLevel>` by tick (`M2` @ `3300d30`) | 1202 | **333 ns** | 6667 ns | ~12500 ns |
+| flat array + occupancy bitmap (`M2` @ `cef560a`)     | 1183 | **333 ns** | 6667 ns | 12250 ns  |
 
-> This is the **unoptimized baseline** (`std::map` + `std::list`). It is the "before"
-> figure for the performance work in the roadmap. Latency percentiles (P50/P99/P99.9)
-> and a single-thread optimized comparison are planned next.
+\* P-99.9 is dominated by OS scheduler / clock jitter on an unpinned laptop (it swung
+±1.5 µs across runs with no code change) — treat it as **noisy, not authoritative**.
+
+### Takeaways (honest)
+
+- The **flat array halves the median** (708 → 333 ns) via O(1) level access, but
+  **regresses average throughput ~40%** (845 → ~1190 ns/order) and roughly doubles the
+  tail on this *dense* 201-tick workload — so it **stays off `main`**.
+- The **occupancy bitmap** (hardware bit-scan for "next non-empty level") is
+  **within noise of the plain flat array** here — its win shows up on *sparse /
+  wide-tick* books, not this dense one.
+- Profiling with `sample` showed `malloc`/`free` at only ~4% of samples, so an
+  object pool was **deprioritized**; the hot path is the match traversal itself.
+
+> The optimization code lives on branch `M2`; `main` keeps the `std::map` baseline
+> until something is a *net* win.
 
 ---
 
