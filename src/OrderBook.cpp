@@ -92,7 +92,6 @@ std::vector<Trade> OrderBook::match(Order& order) {
                     // delete current order
                     OrdersInBook.erase(priceOrderItr->Oid);  // remove from All orders map
                     priceOrderItr = priceLevelList.orders.erase(priceOrderItr);
-                    
                 } else {
                     ++priceOrderItr;
                 }
@@ -100,6 +99,7 @@ std::vector<Trade> OrderBook::match(Order& order) {
 
             // If current Price level become empty and it was bestPrice, then we need to find next best
             if (priceLevelList.isEmpty() && priceLevelList.price - MIN_TICK == bestAskIdx) {
+                bitPoolAsk.clear(Idx);  // Clear that bit representing that price
                 getNextBestAskIdx();
             }
 
@@ -143,10 +143,10 @@ std::vector<Trade> OrderBook::match(Order& order) {
 
             // If current Price level become empty and it was bestPrice, then we need to find next best
             if (priceLevelList.isEmpty() && priceLevelList.price - MIN_TICK == bestBidIdx) {
+                bitPoolBid.clear(Idx);
                 getNextBestBidIdx();
             }
             --Idx;
-            
         }
     }
 
@@ -171,12 +171,14 @@ void OrderBook::rest(Order& order) {
         }
         
         objectItr = Asks[order.price - MIN_TICK].addOrder(order);
+        bitPoolAsk.set(order.price - MIN_TICK);       // Set that tick level in bit map
         
     } else {
         if (order.price - MIN_TICK > bestBidIdx ||  bestBidIdx == Max_Ticks) {
             bestBidIdx = order.price - MIN_TICK;
         }
         objectItr = Bids[order.price - MIN_TICK].addOrder(order);
+        bitPoolBid.set(order.price - MIN_TICK);
     }
 
     OrdersInBook[order.Oid] = objectItr;
@@ -228,8 +230,9 @@ bool OrderBook::optimalCancelOrder(const int& oid) {
         // If a Price level is empty remove that empty level from BIDS
         if (priceLevel.isEmpty() && bestBidIdx == orderItr -> price - MIN_TICK) {
 
+            // clear that price level from bit pool
+            bitPoolBid.clear(bestBidIdx);
             // find new bestBidIdx as cuurent priceLevel is going to be empty;
-
             getNextBestBidIdx();
         }
 
@@ -239,6 +242,10 @@ bool OrderBook::optimalCancelOrder(const int& oid) {
 
         // If a Price level is empty remove that empty level from Asks
         if (priceLevel.isEmpty() && bestAskIdx == orderItr -> price - MIN_TICK) {
+            
+            // clear that price level from ask pool
+            bitPoolAsk.clear(bestAskIdx);
+
             // find new bestAskIdx as cuurent priceLevel  is going to be empty;
             getNextBestAskIdx();
             
@@ -276,26 +283,30 @@ std::optional<int> OrderBook::spread() {
 
 
 void OrderBook:: getNextBestBidIdx() {
-    auto k  = bestBidIdx - 1;      // will look in left hand side 
-    bestBidIdx = Max_Ticks;  // will remain Max_Ticks if better option is not found, otherwise it will get updated
+    // auto idx  = bestBidIdx - 1;      // will look in left hand side 
+    // bestBidIdx = Max_Ticks;  // will remain Max_Ticks if better option is not found, otherwise it will get updated
     
-    for (int i = k; i >= 0 ; --i) {
-        if (!Bids[i].isEmpty()) {
-            bestBidIdx = i;
-            break;
-        }
-    }
+    // for (int i = k; i >= 0 ; --i) {
+    //     if (!Bids[i].isEmpty()) {
+    //         bestBidIdx = i;
+    //         break;
+    //     }
+    // }
+    bestBidIdx =  bitPoolBid.find_first_from_left();
+
 }
 
 void OrderBook:: getNextBestAskIdx() {
-    auto k  = bestAskIdx + 1;      // will look in left hand side 
-    bestAskIdx = -1;  // will remain -1 if better option is not found, otherwise it will get updated
+    // auto k  = bestAskIdx + 1;      // will look in right  hand side 
+    // bestAskIdx = -1;  // will remain -1 if better option is not found, otherwise it will get updated
     
-    for (int i = k; i < Max_Ticks; ++i) {
-        if (!Asks[i].isEmpty()) {
-            bestAskIdx = i;
-            break;
-        }
-    }
+    // for (int i = k; i < Max_Ticks; ++i) {
+    //     if (!Asks[i].isEmpty()) {
+    //         bestAskIdx = i;
+    //         break;
+    //     }
+    // }
+
+    bestAskIdx = bitPoolAsk.find_first_from_right();
 
 }

@@ -33,11 +33,13 @@ class OrderBook {
         */
         static constexpr int64_t MIN_TICK = 9000;
         static constexpr int64_t MAX_TICK = 11000;
-        size_t Max_Ticks = MAX_TICK - MIN_TICK + 1;  // 2000
+        size_t Max_Ticks = MAX_TICK - MIN_TICK + 1;  // 2001. => size of vector
         // Here each{tick - MIN_TICK} index represent a price level; 
         // suppose share price is 500.5 => 10010 Tick =>  10010 - 9000 => 1010 index in vector
         std::vector<PriceLevel> Bids;
         std::vector<PriceLevel> Asks;
+        utils::BitPool2000 bitPoolAsk;
+        utils::BitPool2000 bitPoolBid;
         int64_t bestBidIdx;
         int64_t bestAskIdx;
         void getNextBestBidIdx();
