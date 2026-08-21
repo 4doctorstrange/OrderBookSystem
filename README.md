@@ -111,7 +111,7 @@ back-to-back in one sitting; values below are the **medians**.
 \* P-99.9 is dominated by OS scheduler / clock jitter on an unpinned laptop (it swung
 ±1.5 µs across runs with no code change) — treat it as **noisy, not authoritative**.
 
-### Takeaways (honest)
+### Takeaways
 
 - The **flat array halves the median** (708 → 333 ns) via O(1) level access, but
   **regresses average throughput ~40%** (845 → ~1190 ns/order) and roughly doubles the
