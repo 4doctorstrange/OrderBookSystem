@@ -12,6 +12,7 @@ OrderBook::OrderBook() {
     }
     bestAskIdx = -1;
     bestBidIdx = Max_Ticks;
+    OrderPool.resize(100000);
 };
 
 bool OrderBook::checkIfOrderCanBeCompleted(Order& order) {
@@ -74,26 +75,32 @@ std::vector<Trade> OrderBook::match(Order& order) {
                 ++Idx;
                 continue;
             }
-            auto priceOrderItr = priceLevelList.orders.begin();
-
-            while (priceOrderItr != priceLevelList.orders.end() && order.remQuantity) {
-                int& quantityCouldBeFulfilled = priceOrderItr->remQuantity;
+            // auto priceOrderItr = priceLevelList.orders.begin();
+            auto  priceOrderIdx = priceLevelList.headIdx;
+            
+            while (priceOrderIdx != -1 && order.remQuantity) {
+                auto& orderFromPool = OrderPool[priceOrderIdx];
+                int& quantityCouldBeFulfilled = orderFromPool.remQuantity;
                 
                 int fill = std::min(quantityCouldBeFulfilled, order.remQuantity);
                 quantityCouldBeFulfilled -= fill;
                 order.remQuantity -= fill;
                 priceLevelList.totalQuantity -= fill;       // subtract the "fill" from total quantity of a level also
 
-                Trade tr(order.Oid, priceOrderItr ->Oid, priceOrderItr->price, fill );
+                Trade tr(order.Oid, orderFromPool.Oid, orderFromPool.price, fill );
                 trades.push_back(tr);
                 
                 // Check if order in Ask is fullfilled or not
-                if (priceOrderItr->isFilled()) {
+                if (orderFromPool.isFilled()) {
                     // delete current order
-                    OrdersInBook.erase(priceOrderItr->Oid);  // remove from All orders map
-                    priceOrderItr = priceLevelList.orders.erase(priceOrderItr);
+                    OrdersInBook.erase(orderFromPool.Oid);  // remove from All orders map
+                    // priceOrderItr = priceLevelList.orders.erase(priceOrderItr);
+                    auto temp = orderFromPool.nextIdx;
+                    priceLevelList.removeOrder(OrderPool, priceOrderIdx);
+                    priceOrderIdx = temp;
+                    
                 } else {
-                    ++priceOrderItr;
+                    priceOrderIdx = orderFromPool.nextIdx;
                 }
             }
 
@@ -120,24 +127,27 @@ std::vector<Trade> OrderBook::match(Order& order) {
                 ++Idx;
                 continue;
             }
-            auto priceOrderItr = priceLevelList.orders.begin();
+            auto  priceOrderIdx = priceLevelList.headIdx;
 
-            while (priceOrderItr != priceLevelList.orders.end() && order.remQuantity) {
-                int& quantityCouldBeFulfilled = priceOrderItr->remQuantity;
+            while (priceOrderIdx != -1 && order.remQuantity) {
+                auto& orderFromPool = OrderPool[priceOrderIdx];
+                int& quantityCouldBeFulfilled = orderFromPool.remQuantity;
+
                 int fill = std::min(quantityCouldBeFulfilled, order.remQuantity);
                 quantityCouldBeFulfilled -= fill;
                 order.remQuantity -= fill;
                 priceLevelList.totalQuantity -= fill;       // subtract the "fill" from total quantity of a level also
-                Trade tr(priceOrderItr -> Oid, order.Oid, priceOrderItr->price, fill );
+                Trade tr(orderFromPool.Oid, order.Oid, orderFromPool.price, fill );
                 trades.push_back(tr);
                 // Check if order in BIDS is fullfilled or not
-                if (priceOrderItr->isFilled()) {
+                if (orderFromPool.isFilled()) {
                     // delete current order
-                    OrdersInBook.erase(priceOrderItr->Oid);         // remove from All orders map                   
-                    priceOrderItr = priceLevelList.orders.erase(priceOrderItr);
+                    auto temp = orderFromPool.nextIdx;
+                    priceLevelList.removeOrder(OrderPool, priceOrderIdx);
+                    priceOrderIdx = temp;
                     
                 } else {
-                    ++priceOrderItr;
+                    priceOrderIdx = orderFromPool.nextIdx;
                 }
             }
 
@@ -164,24 +174,30 @@ std::vector<Trade> OrderBook::match(Order& order) {
 */
 void OrderBook::rest(Order& order) {
     
-    std::list<Order>::iterator objectItr;
+    // get free slot from pool and set order
+    int poolIdx = acquire();
+    if (poolIdx == -1) {
+        throw std::runtime_error("No objects available in pool");
+    }
+    OrderPool[poolIdx] = order;
+    
     if (order.side == Side::SELL) {
         if (order.price - MIN_TICK < bestAskIdx ||  bestAskIdx == -1) {
             bestAskIdx = order.price - MIN_TICK;
         }
-        
-        objectItr = Asks[order.price - MIN_TICK].addOrder(order);
+       
+        Asks[order.price - MIN_TICK].addOrder(OrderPool, poolIdx);
         bitPoolAsk.set(order.price - MIN_TICK);       // Set that tick level in bit map
         
     } else {
         if (order.price - MIN_TICK > bestBidIdx ||  bestBidIdx == Max_Ticks) {
             bestBidIdx = order.price - MIN_TICK;
         }
-        objectItr = Bids[order.price - MIN_TICK].addOrder(order);
+        Bids[order.price - MIN_TICK].addOrder(OrderPool, poolIdx);
         bitPoolBid.set(order.price - MIN_TICK);
     }
 
-    OrdersInBook[order.Oid] = objectItr;
+    OrdersInBook[order.Oid] = poolIdx;
 } 
 
 /*
@@ -219,16 +235,16 @@ bool OrderBook::optimalCancelOrder(const int& oid) {
         return false;            // Cancel can;t happen;
     }
     
-    auto& orderItr = it->second;
-    
+    auto& poolIdx = it->second;
+    auto& orderToCancel = OrderPool[poolIdx];
     // order is in BUY
-    if (orderItr->side == Side::BUY) {
-        auto& priceLevel = Bids[orderItr -> price - MIN_TICK];
+    if (orderToCancel.side == Side::BUY) {
+        auto& priceLevel = Bids[orderToCancel.price - MIN_TICK];
         // auto& priceLevel = priceLevelItr;
-        priceLevel.removeOrder(orderItr);
+        priceLevel.removeOrder(OrderPool, poolIdx);
         
         // If a Price level is empty remove that empty level from BIDS
-        if (priceLevel.isEmpty() && bestBidIdx == orderItr -> price - MIN_TICK) {
+        if (priceLevel.isEmpty() && bestBidIdx == orderToCancel.price - MIN_TICK) {
 
             // clear that price level from bit pool
             bitPoolBid.clear(bestBidIdx);
@@ -237,11 +253,11 @@ bool OrderBook::optimalCancelOrder(const int& oid) {
         }
 
     } else {
-        auto& priceLevel = Asks[orderItr -> price - MIN_TICK];
-        priceLevel.removeOrder(orderItr);
+        auto& priceLevel = Asks[orderToCancel.price- MIN_TICK];
+        priceLevel.removeOrder(OrderPool, poolIdx);
 
         // If a Price level is empty remove that empty level from Asks
-        if (priceLevel.isEmpty() && bestAskIdx == orderItr -> price - MIN_TICK) {
+        if (priceLevel.isEmpty() && bestAskIdx == orderToCancel.price - MIN_TICK) {
             
             // clear that price level from ask pool
             bitPoolAsk.clear(bestAskIdx);
@@ -309,4 +325,14 @@ void OrderBook:: getNextBestAskIdx() {
 
     bestAskIdx = bitPoolAsk.find_first_from_right();
 
+}
+
+int OrderBook:: acquire() {
+    for (int i = 0; i < OrderPool.size(); i++) {
+        auto& order = OrderPool[i];
+        if (order.price == -1) {        //  return first free order's index which is not sitting in book
+            return i;
+        }
+    }
+    return -1;
 }

@@ -13,7 +13,7 @@ class OrderBook {
     public: 
         // std::map<int64_t, PriceLevel, std::greater<int64_t> > Bids;  // Largest bids first to maximise profit
         // std::map<int64_t, PriceLevel> Asks;  // Smaller asks first to maximise profit
-        std::unordered_map<int, std::list<Order>::iterator> OrdersInBook;
+        std::unordered_map<int, int> OrdersInBook;    // <oid, poolIdx>
         OrderBook();
 
         std::vector<Trade> addOrder(Order& order); // will return all the trades this order has generated
@@ -45,6 +45,8 @@ class OrderBook {
         void getNextBestBidIdx();
         void getNextBestAskIdx();
         
+        std::vector<Order> OrderPool; // Object pool;
+        int acquire();   // return a free slot;
 
 };
 

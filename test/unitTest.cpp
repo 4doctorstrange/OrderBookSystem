@@ -22,11 +22,23 @@ static int64_t ticksOf(double price) {
 // Count non-empty price levels on a side (replaces the old map .size()).
 static size_t nonEmptyLevels(const std::vector<PriceLevel>& side) {
     return std::count_if(side.begin(), side.end(),
-                         [](const PriceLevel& l){ return !l.orders.empty(); });
+                         [](const PriceLevel& l){ return !l.isEmpty(); });
 }
 // Access a side's level by its human price.
 static const PriceLevel& levelAt(const std::vector<PriceLevel>& side, double price) {
     return side[ticksOf(price) - OrderBook::MIN_TICK];
+}
+
+// First (head) order resting at a price level (pool + intrusive chain).
+static const Order& frontOrderAt(const OrderBook& book, const std::vector<PriceLevel>& side, double price) {
+    return book.OrderPool[levelAt(side, price).headIdx];
+}
+
+// Number of orders resting at a price level (walk the intrusive chain).
+static size_t levelSize(const OrderBook& book, const std::vector<PriceLevel>& side, double price) {
+    size_t n = 0;
+    for (int idx = levelAt(side, price).headIdx; idx != -1; idx = book.OrderPool[idx].nextIdx) ++n;
+    return n;
 }
 
 void checkInVariants(const OrderBook& book) {
@@ -40,26 +52,24 @@ void checkInVariants(const OrderBook& book) {
         const auto& priceAtLevel =  askIdx + book.MIN_TICK;
         const auto& priceLevel = book.Asks[askIdx];
         auto totalQuantityInPriceLevel = priceLevel.totalQuantity;
-        auto ordersItr = priceLevel.orders.begin();
-        
-        // ASSERT_FALSE(priceLevel.orders.empty()); // Order list in a price level can;t be empty. For Price level to exist atleast 1 valid order must be there
+
         if (priceLevel.isEmpty()) {
             askIdx++;
             continue;
         } 
 
-        ASSERT_FALSE(priceLevel.orders.empty()); // Order list in a price level can;t be empty. For Price level to exist atleast 1 valid order must be there
-
-        totalOrderCount += priceLevel.orders.size();
+        int idx = priceLevel.headIdx;   // walk the intrusive chain through the pool
         int remQty = 0;
-        while (ordersItr != priceLevel.orders.end()) {
-            ASSERT_TRUE(ordersItr->remQuantity > 0);
-            remQty += ordersItr->remQuantity;
-            ASSERT_EQ(priceAtLevel, ordersItr->price);
+        while (idx != -1) {
+            const Order& o = book.OrderPool[idx];
+            ASSERT_TRUE(o.remQuantity > 0);
+            remQty += o.remQuantity;
+            ASSERT_EQ(priceAtLevel, o.price);
 
-            auto findItr = book.OrdersInBook.find(ordersItr->Oid);
-            ASSERT_TRUE(findItr != book.OrdersInBook.end());    // Current order itr must be equal to itr in OrdersInBook;
-            ordersItr++;
+            auto findItr = book.OrdersInBook.find(o.Oid);
+            ASSERT_TRUE(findItr != book.OrdersInBook.end());    // index entry must exist
+            ++totalOrderCount;
+            idx = o.nextIdx;
         }
 
         ASSERT_EQ(totalQuantityInPriceLevel, remQty); // Sum of all remainingQty of orders in a Price level must be consistent with Price'level totalQty 
@@ -73,24 +83,24 @@ void checkInVariants(const OrderBook& book) {
         const auto& priceAtLevel = bidIdx +  book.MIN_TICK;
         const auto&  priceLevel = book.Bids[bidIdx];
         auto totalQuantityInPriceLevel = priceLevel.totalQuantity;
-        auto ordersItr = priceLevel.orders.begin();
-        
+
         if (priceLevel.isEmpty()) {
             bidIdx++;
             continue;
         } 
 
-        ASSERT_FALSE(priceLevel.orders.empty()); // Order list in a price level can;t be empty. For Price level to exist atleast 1 valid order must be there
-        totalOrderCount += priceLevel.orders.size();
+        int idx = priceLevel.headIdx;   // walk the intrusive chain through the pool
         int remQty = 0;
-        while (ordersItr != priceLevel.orders.end()) {
-            ASSERT_TRUE(ordersItr->remQuantity > 0);
-            remQty += ordersItr->remQuantity;
-            ASSERT_EQ(priceAtLevel, ordersItr->price);
+        while (idx != -1) {
+            const Order& o = book.OrderPool[idx];
+            ASSERT_TRUE(o.remQuantity > 0);
+            remQty += o.remQuantity;
+            ASSERT_EQ(priceAtLevel, o.price);
 
-            auto findItr = book.OrdersInBook.find(ordersItr->Oid);
-            ASSERT_TRUE(findItr != book.OrdersInBook.end());   // no missing index entry    // Current order itr must be equal to itr in OrdersInBook;
-            ordersItr++;
+            auto findItr = book.OrdersInBook.find(o.Oid);
+            ASSERT_TRUE(findItr != book.OrdersInBook.end());   // index entry must exist
+            ++totalOrderCount;
+            idx = o.nextIdx;
         }
 
         ASSERT_EQ(totalQuantityInPriceLevel, remQty); // Sum of all remainingQty of orders in a Price level must be consistent with Price'level totalQty 
@@ -148,7 +158,7 @@ TEST(LimitMatch, RestThenFullFill) {
     ASSERT_EQ(nonEmptyLevels(book.Bids), 1u); // the untouched bid still rests
     EXPECT_EQ(book.bestBid(), ticksOf(500.00));
     // the resting bid's quantity was never touched
-    EXPECT_EQ(levelAt(book.Bids, 500.00).orders.front().remQuantity, 100);
+    EXPECT_EQ(frontOrderAt(book, book.Bids, 500.00).remQuantity, 100);
 
 
     checkInVariants(book);
@@ -256,7 +266,7 @@ TEST(LIMIT_TEST, PARTIAL_FILL) {
     EXPECT_EQ(nonEmptyLevels(book.Bids), 1u); // The rest order from C
     EXPECT_EQ(book.bestBid(), ticksOf(501.00)); 
     EXPECT_EQ(levelAt(book.Bids, 501.00).totalQuantity, 20);  // (30-50)
-    EXPECT_EQ(levelAt(book.Bids, 501.00).orders.front().Oid, c.Oid);   // The only order in BIDS is order c
+    EXPECT_EQ(frontOrderAt(book, book.Bids, 501.00).Oid, c.Oid);   // The only order in BIDS is order c
 }
 
 // Scenario 5: market order - fills best, leftover dropped (not rested).
@@ -306,12 +316,12 @@ TEST(CANCEL_ORDER, CANCEL_REST) {
     EXPECT_TRUE(res.empty());
 
     EXPECT_EQ(nonEmptyLevels(book.Asks), 2u) ;// 2 price level {501, 502};
-    EXPECT_EQ(levelAt(book.Asks, 501.00).orders.size(), 2u); // 2 orders in 501 level
+    EXPECT_EQ(levelSize(book, book.Asks, 501.00), 2u); // 2 orders in 501 level
     EXPECT_EQ(levelAt(book.Asks, 501.00).totalQuantity, 80); // (501 : 50 + 30)
 
     book.optimalCancelOrder(a.Oid);
     EXPECT_EQ(nonEmptyLevels(book.Asks), 2u); // Still 2 price level
-    EXPECT_EQ(levelAt(book.Asks, 501.00).orders.size(), 1u);  // 1 order left in 501 level
+    EXPECT_EQ(levelSize(book, book.Asks, 501.00), 1u);  // 1 order left in 501 level
     EXPECT_EQ(levelAt(book.Asks, 501.00).totalQuantity, 30); // (501 :  30)
 }
 
@@ -343,7 +353,7 @@ TEST(IOC, IOC_PARTIAL_FILL) {
      // verify book;
     EXPECT_EQ(nonEmptyLevels(book.Asks), 1u);
     EXPECT_EQ(book.bestAsk(), ticksOf(502.00));    // level 501 is exhausted, 502 is only ask left
-    EXPECT_EQ(levelAt(book.Asks, 502.00).orders.front().Oid, b.Oid);  // Order B is only one sitting there
+    EXPECT_EQ(frontOrderAt(book, book.Asks, 502.00).Oid, b.Oid);  // Order B is only one sitting there
 }
 
 // Scenario 8: IOC fully filled
@@ -461,8 +471,8 @@ TEST(CANCEL_ORDER, VALID_CANCEL) {
     // verify book
     EXPECT_EQ(nonEmptyLevels(book.Asks), 0u);  // 0 asks
     EXPECT_EQ(nonEmptyLevels(book.Bids), 1u);  // 1 resting order;
-    EXPECT_EQ(levelAt(book.Bids, 501).orders.front().Oid, b.Oid);   // b is only remaing order
-    EXPECT_EQ(levelAt(book.Bids, 501).orders.front().remQuantity, 30);   // b is only remaing order
+    EXPECT_EQ(frontOrderAt(book, book.Bids, 501).Oid, b.Oid);   // b is only remaing order
+    EXPECT_EQ(frontOrderAt(book, book.Bids, 501).remQuantity, 30);   // b is only remaing order
 
     // Now cancel B and A
     auto status = book.optimalCancelOrder(a.Oid);
@@ -525,4 +535,61 @@ TEST(BEST_ASK_BID_ORDER, NULL_BUY_TEST) {
      // verify best Ask/bid, both shoudl be null
     EXPECT_EQ(book.bestBid(), std::nullopt);
     EXPECT_EQ(book.bestAsk(), std::nullopt);
+}
+
+// Scenario 15: cancel the TAIL of a multi-order level, then match the rest.
+// Guards removeOrder's tail branch (new tail's nextIdx must become -1).
+TEST(CANCEL_ORDER, CANCEL_TAIL_OF_LEVEL) {
+    OrderBook book;
+    auto a = limit(Side::SELL, 501, 10);
+    auto b = limit(Side::SELL, 501, 20);
+    auto c = limit(Side::SELL, 501, 30);
+    book.addOrder(a);
+    book.addOrder(b);
+    book.addOrder(c);                 // level 501: a -> b -> c
+
+    ASSERT_EQ(levelSize(book, book.Asks, 501), 3u);
+    EXPECT_EQ(levelAt(book.Asks, 501).totalQuantity, 60);
+
+    ASSERT_TRUE(book.optimalCancelOrder(c.Oid));   // cancel the tail
+    EXPECT_EQ(levelSize(book, book.Asks, 501), 2u);
+    EXPECT_EQ(levelAt(book.Asks, 501).totalQuantity, 30);
+    EXPECT_EQ(frontOrderAt(book, book.Asks, 501).Oid, a.Oid);
+    checkInVariants(book);
+
+    // remaining a(10) + b(20) must still match in FIFO order
+    auto d = limit(Side::BUY, 501, 30);
+    auto res2 = book.addOrder(d);
+    ASSERT_EQ(res2.size(), 2u);
+    EXPECT_EQ(res2[0].sellOrderId, a.Oid);
+    EXPECT_EQ(res2[1].sellOrderId, b.Oid);
+    EXPECT_EQ(nonEmptyLevels(book.Asks), 0u);
+}
+
+// Scenario 16: cancel a MIDDLE order of a multi-order level, then match the rest.
+// Guards removeOrder's middle branch (both neighbours relinked).
+TEST(CANCEL_ORDER, CANCEL_MIDDLE_OF_LEVEL) {
+    OrderBook book;
+    auto a = limit(Side::SELL, 501, 10);
+    auto b = limit(Side::SELL, 501, 20);
+    auto c = limit(Side::SELL, 501, 30);
+    book.addOrder(a);
+    book.addOrder(b);
+    book.addOrder(c);                 // level 501: a -> b -> c
+
+    ASSERT_EQ(levelSize(book, book.Asks, 501), 3u);
+
+    ASSERT_TRUE(book.optimalCancelOrder(b.Oid));   // cancel the middle
+    EXPECT_EQ(levelSize(book, book.Asks, 501), 2u);
+    EXPECT_EQ(levelAt(book.Asks, 501).totalQuantity, 40);
+    EXPECT_EQ(frontOrderAt(book, book.Asks, 501).Oid, a.Oid);
+    checkInVariants(book);
+
+    // a(10) then c(30) must remain linked and match in FIFO order
+    auto d = limit(Side::BUY, 501, 40);
+    auto res2 = book.addOrder(d);
+    ASSERT_EQ(res2.size(), 2u);
+    EXPECT_EQ(res2[0].sellOrderId, a.Oid);
+    EXPECT_EQ(res2[1].sellOrderId, c.Oid);
+    EXPECT_EQ(nonEmptyLevels(book.Asks), 0u);
 }

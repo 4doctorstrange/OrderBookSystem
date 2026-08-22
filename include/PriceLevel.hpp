@@ -2,19 +2,21 @@
 #define PRICE_LEVEL_HPP
 
 #include <list>
+#include <vector>
 #include "Order.hpp"
 
 class PriceLevel {
     public:
         int64_t price;
-        std::list<Order> orders;
         int totalQuantity;
 
         PriceLevel(int64_t _price); 
-        std::list<Order>::iterator addOrder(Order& order);
-        void removeOrder(std::list<Order>::iterator&  order);
-        Order& front();
+        void addOrder(std::vector<Order>& pool, int poolIdx);   // pool index where that order is added is added in pool
+        void removeOrder(std::vector<Order>& pool, int poolIdx);
+        int front();
         bool isEmpty() const;
+        int headIdx;  // Addition after head;
+        int tailIdx;  
 
 
 };

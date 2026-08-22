@@ -15,11 +15,14 @@ class Order {
         int quantity;
         int remQuantity;
         long long  timeStamp;
-    
+        Order();
         Order (Side _side, OrderType _orderType, double _price, int _quantity,
                 int _remQuantity);  // Need to handle timestamp and id gen in cpp
 
         bool isFilled();
+
+        int nextIdx;  // Next order in chain
+        int prevIdx;  // prev order in chain
 
 
 };
