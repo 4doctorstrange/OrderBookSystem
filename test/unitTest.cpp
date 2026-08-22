@@ -473,5 +473,56 @@ TEST(CANCEL_ORDER, VALID_CANCEL) {
 
     status = book.optimalCancelOrder(b.Oid);
     ASSERT_FALSE(status);    // Double free shouldn;t be allowed, so it shoudl return false
-
 } 
+
+// Scenario 13: Match a resting SELL order, best Bid/ask must be nullopt
+TEST(BEST_ASK_BID_ORDER, NULL_SELL_TEST) {
+    OrderBook book;
+    auto a  = limit(Side::SELL, 501, 50);
+    auto res = book.addOrder(a);
+
+    EXPECT_EQ(book.bestAsk(), ticksOf(501));
+    EXPECT_EQ(book.bestBid(), std::nullopt);
+
+    auto b = limit(Side::BUY, 502, 50);
+    res = book.addOrder(b);
+
+    ASSERT_TRUE(res.size());    // 1 trade happen;
+
+     //verify trade
+    const Trade& t1 = res[0];
+    EXPECT_EQ(t1.price, ticksOf(501));
+    EXPECT_EQ(t1.quantity, 50);
+    EXPECT_EQ(t1.buyOrderId, b.Oid);
+    EXPECT_EQ(t1.sellOrderId, a.Oid);
+
+     // verify best Ask/bid, both shoudl be null
+    EXPECT_EQ(book.bestBid(), std::nullopt);
+    EXPECT_EQ(book.bestAsk(), std::nullopt);
+}
+
+// Scenario 14: Match a resting Buy order, best Bid/ask must be nullopt
+TEST(BEST_ASK_BID_ORDER, NULL_BUY_TEST) {
+    OrderBook book;
+    auto a  = limit(Side::BUY, 500.5, 50);
+    auto res = book.addOrder(a);
+
+    EXPECT_EQ(book.bestAsk(),  std::nullopt);
+    EXPECT_EQ(book.bestBid(), ticksOf(500.5));
+
+    auto b = limit(Side::SELL, 499.5, 50);
+    res = book.addOrder(b);
+
+    ASSERT_TRUE(res.size());    // 1 trade happen;
+
+     //verify trade
+    const Trade& t1 = res[0];
+    EXPECT_EQ(t1.price, ticksOf(500.5));
+    EXPECT_EQ(t1.quantity, 50);
+    EXPECT_EQ(t1.buyOrderId, a.Oid);
+    EXPECT_EQ(t1.sellOrderId, b.Oid);
+
+     // verify best Ask/bid, both shoudl be null
+    EXPECT_EQ(book.bestBid(), std::nullopt);
+    EXPECT_EQ(book.bestAsk(), std::nullopt);
+}
