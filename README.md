@@ -108,10 +108,14 @@ variants re-run **5× back-to-back in one sitting**; values below are the **medi
 | flat `vector<PriceLevel>` by tick (`M2` @ `3300d30`) | 1215 | 333 ns | 6708 ns | ~16 µs |
 | flat array + occupancy bitmap (`M2` @ `cef560a`)     | 1206 | 333 ns | 6750 ns | ~16 µs |
 | **+ object pool + intrusive list (`M2` @ `2e49e01`)** | **936** | **250 ns** | 5042 ns | ~13 µs |
+| ↳ same build, single **unloaded** run (not the hot batch) | 929 | 250 ns | 5000 ns | **7167 ns** |
 
 \* P-99.9 is **not authoritative** — on an unpinned laptop it is dominated by OS
 scheduler / thermal state (this back-to-back batch ran hot; the baseline alone swung
-8.7 µs → 26 µs with no code change). Lean on **avg / P-50 / P-99**.
+8.7 µs → 26 µs with no code change). The pool build's **single unloaded run** (last row,
+peak resting ≈ 4.05M orders) shows P-99.9 ≈ **7.2 µs** when the machine isn't thermally
+throttled — so most of the ~13 µs median is machine state, not the engine. Lean on
+**avg / P-50 / P-99**.
 
 ### Takeaways
 
