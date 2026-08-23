@@ -98,32 +98,37 @@ ctest --test-dir build --output-on-failure
 ## Benchmark & performance journal
 
 Single-threaded, `-O3 -march=native`, 10,000,000 randomized `LIMIT` orders (seed 42)
-with prices uniform over 201 ticks (a heavy add + match workload), Apple Silicon
-laptop. Latency measured per order with `steady_clock`. Each variant was re-run 5×
-back-to-back in one sitting; values below are the **medians**.
+with prices uniform over 201 ticks (a heavy add + match workload; ~4M peak resting
+orders), Apple Silicon laptop. Latency measured per order with `steady_clock`. All
+variants re-run **5× back-to-back in one sitting**; values below are the **medians**.
 
 | Variant (branch / commit)              | avg ns/order | P-50   | P-99     | P-99.9\*  |
 |----------------------------------------|-------------:|-------:|---------:|----------:|
-| `std::map` price levels — baseline (`main`) | **845**  | 708 ns | 2834 ns  | 6250 ns   |
-| flat `vector<PriceLevel>` by tick (`M2` @ `3300d30`) | 1202 | **333 ns** | 6667 ns | ~12500 ns |
-| flat array + occupancy bitmap (`M2` @ `cef560a`)     | 1183 | **333 ns** | 6667 ns | 12250 ns  |
+| `std::map` price levels — baseline (`main`)          | 998  | 750 ns | **3083 ns** | ~24 µs |
+| flat `vector<PriceLevel>` by tick (`M2` @ `3300d30`) | 1215 | 333 ns | 6708 ns | ~16 µs |
+| flat array + occupancy bitmap (`M2` @ `cef560a`)     | 1206 | 333 ns | 6750 ns | ~16 µs |
+| **+ object pool + intrusive list (`M2` @ `2e49e01`)** | **936** | **250 ns** | 5042 ns | ~13 µs |
 
-\* P-99.9 is dominated by OS scheduler / clock jitter on an unpinned laptop (it swung
-±1.5 µs across runs with no code change) — treat it as **noisy, not authoritative**.
+\* P-99.9 is **not authoritative** — on an unpinned laptop it is dominated by OS
+scheduler / thermal state (this back-to-back batch ran hot; the baseline alone swung
+8.7 µs → 26 µs with no code change). Lean on **avg / P-50 / P-99**.
 
 ### Takeaways
 
-- The **flat array halves the median** (708 → 333 ns) via O(1) level access, but
-  **regresses average throughput ~40%** (845 → ~1190 ns/order) and roughly doubles the
-  tail on this *dense* 201-tick workload — so it **stays off `main`**.
-- The **occupancy bitmap** (hardware bit-scan for "next non-empty level") is
-  **within noise of the plain flat array** here — its win shows up on *sparse /
-  wide-tick* books, not this dense one.
-- Profiling with `sample` showed `malloc`/`free` at only ~4% of samples, so an
-  object pool was **deprioritized**; the hot path is the match traversal itself.
+- **Flat array** trades average for median: median halves (750 → 333 ns) via O(1) level
+  access, but average **regresses** (998 → 1215 ns/order) on this dense, deep-book workload.
+- **Occupancy bitmap** is within noise of the plain flat array here — its win is on
+  *sparse / wide-tick* books, not this dense one.
+- **Object pool + intrusive linked list** is the first *net* win: removing per-order
+  `std::list` node allocation brings the average back to **936 ns (below the `map`
+  baseline)** while keeping the **best median (250 ns)**. Only **P-99 still favours the
+  map** (3083 vs 5042 ns) — an honest remaining gap.
+- A sampling profile had shown `malloc`/`free` at only ~4% of self-time, which *under*-sold
+  the cost: removing `std::list` also cut allocator bookkeeping and improved cache
+  locality, for a ~20% average gain over the flat-array/bitmap builds.
 
-> The optimization code lives on branch `M2`; `main` keeps the `std::map` baseline
-> until something is a *net* win.
+> The optimization code lives on branch `M2`; `main` keeps the `std::map` baseline as
+> the reference implementation.
 
 ---
 
