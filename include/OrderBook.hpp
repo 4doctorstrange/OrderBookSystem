@@ -14,7 +14,7 @@ class OrderBook {
         // std::map<int64_t, PriceLevel, std::greater<int64_t> > Bids;  // Largest bids first to maximise profit
         // std::map<int64_t, PriceLevel> Asks;  // Smaller asks first to maximise profit
         std::unordered_map<int, int> OrdersInBook;    // <oid, poolIdx>
-        OrderBook();
+        OrderBook(int poolSize = 1 << 16);
 
         std::vector<Trade> addOrder(Order& order); // will return all the trades this order has generated
         std::vector<Trade> match(Order& order);
@@ -45,7 +45,9 @@ class OrderBook {
         void getNextBestBidIdx();
         void getNextBestAskIdx();
         
+        int PoolSize;
         std::vector<Order> OrderPool; // Object pool;
+        std::vector<int>  FreeList;  // This will tell which index we can use for an order in rest
         int acquire();   // return a free slot;
 
 };

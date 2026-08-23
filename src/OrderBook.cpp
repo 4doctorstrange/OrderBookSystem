@@ -3,7 +3,7 @@
 #include <iostream>
 #include <stdexcept>
 
-OrderBook::OrderBook() {
+OrderBook::OrderBook(int poolSize): PoolSize(poolSize)  {
     Bids.reserve(Max_Ticks);
     Asks.reserve(Max_Ticks);
     for (auto i = 0; i < Max_Ticks; i++) {
@@ -12,7 +12,11 @@ OrderBook::OrderBook() {
     }
     bestAskIdx = -1;
     bestBidIdx = Max_Ticks;
-    OrderPool.resize(100000);
+    OrderPool.resize(PoolSize);
+    FreeList.resize(PoolSize);
+    for (int i = 0; i < PoolSize; i++) {
+        FreeList[i] = i;
+    }
 };
 
 bool OrderBook::checkIfOrderCanBeCompleted(Order& order) {
@@ -97,6 +101,7 @@ std::vector<Trade> OrderBook::match(Order& order) {
                     // priceOrderItr = priceLevelList.orders.erase(priceOrderItr);
                     auto temp = orderFromPool.nextIdx;
                     priceLevelList.removeOrder(OrderPool, priceOrderIdx);
+                    FreeList.push_back(priceOrderIdx);   // ADD index back in pool;
                     priceOrderIdx = temp;
                     
                 } else {
@@ -144,6 +149,7 @@ std::vector<Trade> OrderBook::match(Order& order) {
                     // delete current order
                     auto temp = orderFromPool.nextIdx;
                     priceLevelList.removeOrder(OrderPool, priceOrderIdx);
+                    FreeList.push_back(priceOrderIdx);   // ADD index back in Free pool;
                     priceOrderIdx = temp;
                     
                 } else {
@@ -177,6 +183,7 @@ void OrderBook::rest(Order& order) {
     // get free slot from pool and set order
     int poolIdx = acquire();
     if (poolIdx == -1) {
+        // TODO: If pool is exhausted, resize the pool size instead of throwing exception
         throw std::runtime_error("No objects available in pool");
     }
     OrderPool[poolIdx] = order;
@@ -242,6 +249,7 @@ bool OrderBook::optimalCancelOrder(const int& oid) {
         auto& priceLevel = Bids[orderToCancel.price - MIN_TICK];
         // auto& priceLevel = priceLevelItr;
         priceLevel.removeOrder(OrderPool, poolIdx);
+        FreeList.push_back(poolIdx);   // ADD index back in pool;
         
         // If a Price level is empty remove that empty level from BIDS
         if (priceLevel.isEmpty() && bestBidIdx == orderToCancel.price - MIN_TICK) {
@@ -255,6 +263,7 @@ bool OrderBook::optimalCancelOrder(const int& oid) {
     } else {
         auto& priceLevel = Asks[orderToCancel.price- MIN_TICK];
         priceLevel.removeOrder(OrderPool, poolIdx);
+        FreeList.push_back(poolIdx);       // ADD index back in pool;
 
         // If a Price level is empty remove that empty level from Asks
         if (priceLevel.isEmpty() && bestAskIdx == orderToCancel.price - MIN_TICK) {
@@ -299,40 +308,21 @@ std::optional<int> OrderBook::spread() {
 
 
 void OrderBook:: getNextBestBidIdx() {
-    // auto idx  = bestBidIdx - 1;      // will look in left hand side 
-    // bestBidIdx = Max_Ticks;  // will remain Max_Ticks if better option is not found, otherwise it will get updated
-    
-    // for (int i = k; i >= 0 ; --i) {
-    //     if (!Bids[i].isEmpty()) {
-    //         bestBidIdx = i;
-    //         break;
-    //     }
-    // }
     bestBidIdx =  bitPoolBid.find_first_from_left();
 
 }
 
 void OrderBook:: getNextBestAskIdx() {
-    // auto k  = bestAskIdx + 1;      // will look in right  hand side 
-    // bestAskIdx = -1;  // will remain -1 if better option is not found, otherwise it will get updated
-    
-    // for (int i = k; i < Max_Ticks; ++i) {
-    //     if (!Asks[i].isEmpty()) {
-    //         bestAskIdx = i;
-    //         break;
-    //     }
-    // }
-
     bestAskIdx = bitPoolAsk.find_first_from_right();
 
 }
 
 int OrderBook:: acquire() {
-    for (int i = 0; i < OrderPool.size(); i++) {
-        auto& order = OrderPool[i];
-        if (order.price == -1) {        //  return first free order's index which is not sitting in book
-            return i;
-        }
+    int poolIdx = -1;
+    if (!FreeList.empty()) {
+        poolIdx = FreeList.back();
+        FreeList.pop_back();
     }
-    return -1;
+    
+    return poolIdx;
 }

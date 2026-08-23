@@ -7,7 +7,7 @@
 #include <iostream>
 
 const int  SampleSize = 10000000;
-
+                         
 std::vector<Order> getBenchData() {
     std::mt19937 rng(42);   // random number generator, 42 is seed
     std::bernoulli_distribution sideDist(0.5); // generates a random boolean value with 50% chances of each
@@ -29,20 +29,25 @@ std::vector<Order> getBenchData() {
 
 
 void averageBaseLine(std::vector<Order>& sample) {
-    OrderBook book;
+    OrderBook book(5000000);  // As per given sample size 50L pool size shoudl handle this
     auto start = std::chrono::steady_clock::now();
+    int MaxRestingOrder = -1;
 
     for (auto& order: sample) {
         book.addOrder(order);
+        // if (static_cast<int>(book.OrdersInBook.size()) > MaxRestingOrder ) {
+        //     MaxRestingOrder = book.OrdersInBook.size();
+        // }
     }
     auto end = std::chrono::steady_clock::now();
     auto elapsed_time = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count();
     double nsPerOrder = static_cast<double>(elapsed_time) / SampleSize;
     std::cout << "Time Elapsed: " << elapsed_time << "ns , throughput :" << nsPerOrder << " ns/order" << std::endl;
+    
 }
 
 void percentileBaseline(std::vector<Order>& sample) {
-    OrderBook book;
+    OrderBook book(5000000);    //// As per given sample size 50Lakh pool size shoudl handle this
     std::vector<uint64_t> timeTaken;
     timeTaken.reserve(SampleSize);
 
@@ -52,6 +57,9 @@ void percentileBaseline(std::vector<Order>& sample) {
         auto end = std::chrono::steady_clock::now();
         auto elapsed_time = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count();
         timeTaken.push_back(elapsed_time);
+        // if (static_cast<int>(book.OrdersInBook.size()) > MaxRestingOrder ) {
+        //     MaxRestingOrder = book.OrdersInBook.size();
+        // }
     }
     
     sort(timeTaken.begin(), timeTaken.end());
