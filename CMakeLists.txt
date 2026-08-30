@@ -66,3 +66,12 @@ target_link_libraries(order_bench PRIVATE book)
 target_compile_options(order_bench PRIVATE -O3 -march=native)  
 
 
+#========================= Multi thread Bench Enabling ====================================:
+# create MT bench executable
+add_executable(order_mt_bench microBench/multiThreadBench.cpp)
+
+# Link book with bench executbale
+target_link_libraries(order_mt_bench PRIVATE book)
+
+#Compile optimization:  -O3 -march=native on just this target guarantees the benchmark is optimized regardless of the overall build type.
+target_compile_options(order_mt_bench PRIVATE -O3 -march=native) 
