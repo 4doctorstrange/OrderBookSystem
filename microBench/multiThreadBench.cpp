@@ -1,6 +1,7 @@
 #include "../include/OrderBook.hpp"
 #include <atomic>
 #include <cassert>
+#include <cstdlib>
 #include <random>
 #include <vector>
 #include <chrono>
@@ -9,6 +10,7 @@
 #include <condition_variable>
 #include <iostream>
 #include <cassert> // Required header
+#include <atomic>
 
 const int  SampleSize = 10000000;   // 10M orders
 
@@ -87,51 +89,86 @@ class AverageBaseLine {
             }
             auto end = std::chrono::steady_clock::now();
 
-            if (orderCount != SampleSize) { std::cerr << "LOST ORDERS: " << orderCount << "\n"; std::abort(); }
+            if (orderCount != SampleSize) { std::cerr << "LOST ORDERS MUTEX: " << orderCount << "\n"; std::abort(); }
             
             auto elapsed_time = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count();
             double nsPerOrder = static_cast<double>(elapsed_time) / SampleSize;
             std::cout << "MT Time Elapsed: " << elapsed_time << "ns , throughput :" << nsPerOrder << " ns/order" << std::endl;
         }
 };
-// void averageBaseLine(std::vector<Order>& sample) {
-//     OrderBook book(5000000);  // As per given sample size 50L pool size shoudl handle this
-//     auto start = std::chrono::steady_clock::now();
-//     int MaxRestingOrder = -1;
 
-//     for (auto& order: sample) {
-//         book.addOrder(order);
-//         // if (static_cast<int>(book.OrdersInBook.size()) > MaxRestingOrder ) {
-//         //     MaxRestingOrder = book.OrdersInBook.size();
-//         // }
-//     }
-//     auto end = std::chrono::steady_clock::now();
-//     auto elapsed_time = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count();
-//     double nsPerOrder = static_cast<double>(elapsed_time) / SampleSize;
-//     std::cout << "Time Elapsed: " << elapsed_time << "ns , throughput :" << nsPerOrder << " ns/order" << std::endl;
+
+class SPSC {
+    private:
+        alignas(64) std::atomic<int> head{0}; // pop
+        alignas(64) std::atomic<int> tail{0}; // push
+        int Capacity;
+        std::vector<Order> oqueue;
+        int orderCount;
     
-// }
+        void Producer(std::vector<Order> sample) {
+            int cachedHead = 0; 
+            for (int i = 0; i < SampleSize; i++) {
+                
+                auto tail_idx = tail.load(std::memory_order_relaxed);
+                auto next = (tail_idx + 1) & (Capacity - 1);
+                
+                
+                while (next == cachedHead) {
+                    cachedHead = head.load(std::memory_order_acquire);
+                }
+                
+                oqueue[tail_idx] = sample.back();
+                sample.pop_back();
+                tail.store(next, std::memory_order_release);
+                
+                
+            }
+        }
 
-// void percentileBaseline(std::vector<Order>& sample) {
-//     OrderBook book(5000000);    //// As per given sample size 50Lakh pool size shoudl handle this
-//     std::vector<uint64_t> timeTaken;
-//     timeTaken.reserve(SampleSize);
+        void Consumer() {
+            int cachedTail = 0;   
+            for (int i = 0; i < SampleSize; i++) {
+                auto head_idx = head.load(std::memory_order_relaxed);
+                // get fresh copy of tail when colllision 
+                while (head_idx == cachedTail) {
+                    cachedTail = tail.load(std::memory_order_acquire);
+                }
+                // oqueue[head_idx] = Order(); // Make it a null or fresh order;
+                orderCount += 1;
+                head.store( (head_idx + 1) & (Capacity - 1), std::memory_order_release);
+            }
+        }
 
-//     for (auto& order: sample) {
-//         auto start = std::chrono::steady_clock::now();
-//         book.addOrder(order);
-//         auto end = std::chrono::steady_clock::now();
-//         auto elapsed_time = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count();
-//         timeTaken.push_back(elapsed_time);
-//         // if (static_cast<int>(book.OrdersInBook.size()) > MaxRestingOrder ) {
-//         //     MaxRestingOrder = book.OrdersInBook.size();
-//         // }
-//     }
-    
-//     sort(timeTaken.begin(), timeTaken.end());
-//     std::cout << "P50: " << timeTaken[0.5 * SampleSize] << " ns |  P99: " << timeTaken[0.99 * SampleSize] << " ns |  P99.9: " << timeTaken[0.999 * SampleSize] << "ns " <<  std::endl;
-// }
+    public: 
+        SPSC(): orderCount(0), Capacity(1 << 14)  {
+            // lets set capacity of  oqueue to be 10000
+            oqueue.resize(Capacity);
+
+            auto sample1 = getBenchData();
+            
+            auto start  = std::chrono::steady_clock::now();
+            {
+                std::jthread producer(&SPSC::Producer, this, std::move(sample1));
+                std::jthread consumer(&SPSC::Consumer, this);
+            }
+            auto end = std::chrono::steady_clock::now();
+
+            if (orderCount != SampleSize) {
+                std::cerr << "LOST ORDERS in SPSC: " << orderCount << "\n";
+                std::abort();
+            }
+
+            auto elapsed_time = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count();
+            double nsPerOrder = static_cast<double>(elapsed_time) / SampleSize;
+            std::cout << "SPSC Time Elapsed: " << elapsed_time << "ns , throughput :" << nsPerOrder << " ns/order" << std::endl;
+        }
+
+
+};
+
 
 int main() {
     AverageBaseLine avl;
+    SPSC sp;
 }
