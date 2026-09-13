@@ -34,7 +34,27 @@ std::vector<Order> getBenchData() {
 }
 
 
+// 1 threaded 
 class AverageBaseLine {
+    private:
+        std::vector<Order> sample;
+        OrderBook book;
+    public:
+        AverageBaseLine(std::vector<Order> orders): sample(std::move(orders)) {
+            book = OrderBook(5000000);
+            for (auto& order: sample) {
+                book.addOrder(order);
+            }
+        }
+        
+        OrderBook getAverageBaseLineBook() {
+            return book;
+        }
+
+};
+
+//  mutex based Producer-Consumer
+class AverageBaseLinePC {
     private:
         // Global variables
         std::mutex mtx;
@@ -80,12 +100,12 @@ class AverageBaseLine {
         }
 
     public:
-        AverageBaseLine(): orderCount(0)  {
+        AverageBaseLinePC(): orderCount(0)  {
             auto sample1 = getBenchData();
             auto start = std::chrono::steady_clock::now(); 
             {
-                std::jthread producer(&AverageBaseLine::Producer, this, std::move(sample1) );
-                std::jthread consumer(&AverageBaseLine::Consumer, this);
+                std::jthread producer(&AverageBaseLinePC::Producer, this, std::move(sample1) );
+                std::jthread consumer(&AverageBaseLinePC::Consumer, this);
             }
             auto end = std::chrono::steady_clock::now();
 
@@ -98,6 +118,7 @@ class AverageBaseLine {
 };
 
 
+// lock free  Single Producer-Consumer
 class SPSC {
     private:
         alignas(64) std::atomic<int> head{0}; // pop
@@ -118,7 +139,7 @@ class SPSC {
                     cachedHead = head.load(std::memory_order_acquire);
                 }
                 
-                oqueue[tail_idx] = sample.back();
+                oqueue[tail_idx] = sample[i];
                 sample.pop_back();
                 tail.store(next, std::memory_order_release);
                 
@@ -168,7 +189,113 @@ class SPSC {
 };
 
 
+class PipelineSPSC {
+    private:
+        alignas(64) std::atomic<int> head{0}; // pop
+        alignas(64) std::atomic<int> tail{0}; // push
+        int Capacity;
+        std::vector<Order> oqueue;
+        int orderCount;
+        OrderBook book;
+        std::vector<Order> sample;
+    
+        void Producer() {
+            int cachedHead = 0; 
+            for (int i = 0; i < SampleSize; i++) {
+                
+                auto tail_idx = tail.load(std::memory_order_relaxed);
+                auto next = (tail_idx + 1) & (Capacity - 1);
+                
+                
+                while (next == cachedHead) {
+                    cachedHead = head.load(std::memory_order_acquire);
+                }
+                
+                oqueue[tail_idx] = sample[i];
+                // sample.pop_back();
+                tail.store(next, std::memory_order_release);
+                
+                
+            }
+        }
+
+        void Consumer() {
+            int cachedTail = 0;   
+            for (int i = 0; i < SampleSize; i++) {
+                auto head_idx = head.load(std::memory_order_relaxed);
+                // get fresh copy of tail when colllision 
+                while (head_idx == cachedTail) {
+                    cachedTail = tail.load(std::memory_order_acquire);
+                }
+                orderCount += 1;
+                book.addOrder(oqueue[head_idx]);     // Add order in book;
+                head.store( (head_idx + 1) & (Capacity - 1), std::memory_order_release);
+            }
+        }
+
+    public: 
+        PipelineSPSC(std::vector<Order> sample): orderCount(0), Capacity(1 << 14) , sample(std::move(sample)) {
+            // lets set capacity of  oqueue to be 10000
+            oqueue.resize(Capacity);
+            book = OrderBook(5000000);
+            {
+                std::jthread producer(&PipelineSPSC::Producer, this);
+                std::jthread consumer(&PipelineSPSC::Consumer, this);
+            }
+            auto end = std::chrono::steady_clock::now();
+
+            if (orderCount != SampleSize) {
+                std::cerr << "LOST ORDERS in Pipelined SPSC: " << orderCount << "\n";
+                std::abort();
+            }
+        }
+
+        OrderBook getPipeLineBook() {
+            return book;
+        }
+};
+
 int main() {
-    AverageBaseLine avl;
-    SPSC sp;
+    // AverageBaseLinePC avl;
+    // SPSC sp;
+
+    auto orderList = getBenchData();
+    AverageBaseLine avg(orderList);
+    PipelineSPSC pipeline(orderList);
+
+    auto avgBaseLineBook = avg.getAverageBaseLineBook();
+    auto pipeLineBook = pipeline.getPipeLineBook();
+
+    // ALL THE BELOW ASSERTS MUST PASS:
+
+    // check resting orders in book
+    assert(avgBaseLineBook.OrdersInBook.size() == pipeLineBook.OrdersInBook.size());
+
+    //Check BIDS:
+    assert(avgBaseLineBook.Bids.size() == pipeLineBook.Bids.size());
+    assert(avgBaseLineBook.bestBid() == pipeLineBook.bestBid());
+
+    auto BidsSize = avgBaseLineBook.Bids.size();
+    for (int i = 0; i < BidsSize; i++) {
+        auto avgPriceLevel = avgBaseLineBook.Bids[i];
+        auto pipePriceLevel = pipeLineBook.Bids[i];
+
+        assert(avgPriceLevel.headIdx == pipePriceLevel.headIdx);
+        assert(avgPriceLevel.totalQuantity == pipePriceLevel.totalQuantity);
+    }
+
+
+    // Check Asks
+    assert(avgBaseLineBook.Asks.size() == pipeLineBook.Asks.size());
+    assert(avgBaseLineBook.bestAsk() == pipeLineBook.bestAsk());
+
+
+    auto AsksSize = avgBaseLineBook.Asks.size();
+    for (int i = 0; i < AsksSize; i++) {
+        auto avgPriceLevel = avgBaseLineBook.Asks[i];
+        auto pipePriceLevel = pipeLineBook.Asks[i];
+        assert(avgPriceLevel.headIdx == pipePriceLevel.headIdx);
+        assert(avgPriceLevel.totalQuantity == pipePriceLevel.totalQuantity);
+    }
+
 }
