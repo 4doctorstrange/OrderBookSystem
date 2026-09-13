@@ -1,4 +1,4 @@
-# Order Book — Milestone 3: Lock-Free Concurrency (`M3`)
+# Order Book — Stage 3: Lock-Free Concurrency (`M3`)
 
 > This branch decouples **order intake** from **matching** using a **lock-free SPSC ring
 > buffer** feeding a **single-writer matching thread**. It builds on the single-threaded
