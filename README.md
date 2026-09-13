@@ -1,4 +1,4 @@
-# Order Book — Milestone 2: Single-Thread Latency Optimization (`M2`)
+# Order Book — Stage 2: Single-Thread Latency Optimization (`M2`)
 
 > This branch takes the correct `std::map`-based engine (on `main`) and rebuilds its hot data
 > structures for **cache locality** and **zero hot-path allocation**. For the full engine
